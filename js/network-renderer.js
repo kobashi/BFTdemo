@@ -1,29 +1,68 @@
 /**
  * Network Canvas Visualizer for BFT Simulation
  * Renders nodes, topology links, phase states, glowing pulses, and message particles,
- * plus explicit visual indicators for traitor message rejection / filtering.
+ * plus explicit visual indicators for traitor message rejection / filtering and
+ * interactive node click detection for details inspection modal.
  */
 
 export class NetworkRenderer {
-  constructor(canvasElement, bftEngine) {
+  constructor(canvasElement, bftEngine, onNodeClickCallback) {
     this.canvas = canvasElement;
     this.ctx = canvasElement.getContext('2d');
     this.engine = bftEngine;
+    this.onNodeClick = onNodeClickCallback;
     
     this.nodePositions = new Map();
     this.clientPosition = { x: 0, y: 0 };
     this.activeParticles = [];
-    this.rejectionBadges = []; // floating ❌ icons
+    this.rejectionBadges = [];
+    this.hoveredNodeId = null;
     
     this.animId = null;
     this.resizeCanvas();
     window.addEventListener('resize', () => this.resizeCanvas());
+
+    this.initCanvasInteractivity();
 
     this.engine.subscribe(() => {
       this.syncMessagesFromEngine();
     });
 
     this.startAnimationLoop();
+  }
+
+  initCanvasInteractivity() {
+    this.canvas.addEventListener('mousemove', (e) => {
+      const rect = this.canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      let hovered = null;
+      this.nodePositions.forEach((pos, nodeId) => {
+        const dist = Math.hypot(mouseX - pos.x, mouseY - pos.y);
+        if (dist <= 28) {
+          hovered = nodeId;
+        }
+      });
+
+      this.hoveredNodeId = hovered;
+      this.canvas.style.cursor = (hovered !== null) ? 'pointer' : 'default';
+    });
+
+    this.canvas.addEventListener('click', (e) => {
+      const rect = this.canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+
+      this.nodePositions.forEach((pos, nodeId) => {
+        const dist = Math.hypot(mouseX - pos.x, mouseY - pos.y);
+        if (dist <= 28) {
+          if (this.onNodeClick) {
+            this.onNodeClick(nodeId);
+          }
+        }
+      });
+    });
   }
 
   resizeCanvas() {
@@ -51,7 +90,6 @@ export class NetworkRenderer {
   }
 
   syncMessagesFromEngine() {
-    // Convert new inFlightMessages to animated particles
     while (this.engine.inFlightMessages.length > 0) {
       const msg = this.engine.inFlightMessages.shift();
       const startPos = msg.from === 'CLIENT' ? this.clientPosition : this.nodePositions.get(msg.from);
@@ -69,7 +107,6 @@ export class NetworkRenderer {
       }
     }
 
-    // Process new rejected messages for floating badges
     while (this.engine.rejectedMessages.length > 0) {
       const rej = this.engine.rejectedMessages.shift();
       const pos = this.nodePositions.get(rej.nodeId);
@@ -174,6 +211,7 @@ export class NetworkRenderer {
       const isLeader = node.isLeader;
       const isByzantine = node.behavior !== 'honest';
       const isSilent = node.behavior === 'silent';
+      const isHovered = (this.hoveredNodeId === node.id);
 
       let strokeColor = '#10b981';
       let glowColor = 'rgba(16, 185, 129, 0.4)';
@@ -193,15 +231,27 @@ export class NetworkRenderer {
         glowColor = 'transparent';
       }
 
+      // Draw Hover highlight ring
+      if (isHovered) {
+        this.ctx.save();
+        this.ctx.beginPath();
+        this.ctx.arc(x, y, 32, 0, Math.PI * 2);
+        this.ctx.strokeStyle = 'rgba(99, 102, 241, 0.8)';
+        this.ctx.lineWidth = 2;
+        this.ctx.setLineDash([4, 4]);
+        this.ctx.stroke();
+        this.ctx.restore();
+      }
+
       // Draw Node Outer Circle
       this.ctx.save();
       this.ctx.beginPath();
-      this.ctx.arc(x, y, 26, 0, Math.PI * 2);
+      this.ctx.arc(x, y, isHovered ? 28 : 26, 0, Math.PI * 2);
       this.ctx.fillStyle = 'rgba(10, 15, 30, 0.95)';
       this.ctx.strokeStyle = strokeColor;
       this.ctx.lineWidth = isLeader ? 3 : 2;
       this.ctx.shadowColor = glowColor;
-      this.ctx.shadowBlur = 15;
+      this.ctx.shadowBlur = isHovered ? 25 : 15;
       this.ctx.fill();
       this.ctx.stroke();
 
@@ -297,7 +347,7 @@ export class NetworkRenderer {
   drawRejectionBadges() {
     for (let i = this.rejectionBadges.length - 1; i >= 0; i--) {
       const b = this.rejectionBadges[i];
-      b.y -= 0.3; // Floating up
+      b.y -= 0.3;
       b.opacity -= 0.008;
 
       if (b.opacity <= 0) {

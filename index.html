@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>BFT Consensus Interactive Simulator | PBFT Network Learning Tool</title>
-  <meta name="description" content="Interactive learning web app for Byzantine Fault Tolerance (PBFT) consensus algorithms. Adjust parameters N and F, observe real-time message passing, and visualize traitor vote exclusion.">
+  <meta name="description" content="Interactive learning web app for Byzantine Fault Tolerance (PBFT) consensus algorithms. Adjust parameters N and F, observe real-time message passing, and inspect node voting histories in popups.">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -100,6 +100,7 @@
               <div class="legend-item"><span class="node-dot leader"></span> リーダー (Primary)</div>
               <div class="legend-item"><span class="node-dot honest"></span> 正常ノード (Honest)</div>
               <div class="legend-item"><span class="node-dot byzantine"></span> 障害ノード (Byzantine)</div>
+              <div class="legend-item" style="color:var(--accent-primary); cursor:default;">💡 ノードをクリックすると投票詳細Popupを表示</div>
             </div>
           </div>
 
@@ -288,6 +289,21 @@ git push -u origin main
     </div>
 
   </main>
+
+  <!-- Node Details Inspector Modal -->
+  <div id="nodeModalOverlay" class="modal-overlay">
+    <div class="modal-container">
+      <div class="modal-header">
+        <div id="nodeModalTitle" class="modal-title">
+          <span>🔍 Node Inspector</span>
+        </div>
+        <button id="btnNodeModalClose" class="modal-close" title="Close">&times;</button>
+      </div>
+      <div id="nodeModalBody" class="modal-body">
+        <!-- Rendered dynamically by ui.js -->
+      </div>
+    </div>
+  </div>
 
   <!-- Module Scripts -->
   <script type="module" src="js/ui.js"></script>

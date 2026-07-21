@@ -1,7 +1,7 @@
 /**
  * UI Controller for BFT Educational Web Application
- * Handles controls, preset switching, matrix rendering, log feeds, and
- * the explicit Traitor Vote Exclusion & Tally Inspector.
+ * Handles controls, preset switching, matrix rendering, log feeds,
+ * explicit Traitor Vote Exclusion & Tally Inspector, and Node Details Inspector Modal.
  */
 
 import { BFTEngine } from './bft-engine.js';
@@ -12,16 +12,22 @@ export class UIController {
   constructor() {
     this.engine = new BFTEngine(4, 0);
     const canvas = document.getElementById('networkCanvas');
-    this.renderer = new NetworkRenderer(canvas, this.engine);
+    
+    this.renderer = new NetworkRenderer(canvas, this.engine, (nodeId) => {
+      this.showNodeModal(nodeId);
+    });
+    
     this.theory = new TheoryController();
 
     this.isPlaying = false;
     this.playInterval = null;
     this.playSpeed = 1000;
+    this.activeModalNodeId = null;
 
     this.initNavigation();
     this.initControls();
     this.initPresets();
+    this.initModalEvents();
     this.initEngineListeners();
 
     // Default setup: Set Node 3 to lie_split to show traitor exclusion immediately!
@@ -90,6 +96,28 @@ export class UIController {
     });
   }
 
+  initModalEvents() {
+    const overlay = document.getElementById('nodeModalOverlay');
+    const btnClose = document.getElementById('btnNodeModalClose');
+
+    const closeModal = () => {
+      overlay?.classList.remove('open');
+      this.activeModalNodeId = null;
+    };
+
+    btnClose?.addEventListener('click', closeModal);
+    
+    overlay?.addEventListener('click', (e) => {
+      if (e.target === overlay) closeModal();
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && overlay?.classList.contains('open')) {
+        closeModal();
+      }
+    });
+  }
+
   updateLeaderSelectOptions() {
     const leaderSelect = document.getElementById('selectLeader');
     if (!leaderSelect) return;
@@ -126,10 +154,8 @@ export class UIController {
         this.engine.totalNodes = p.N;
         this.engine.leaderId = p.leader;
 
-        // Reset all nodes to default honest first (false = clear previous behaviors)
         this.engine.reset(false);
 
-        // Apply preset specific node behaviors
         for (let nodeId in p.behaviors) {
           this.engine.setNodeBehavior(parseInt(nodeId, 10), p.behaviors[nodeId]);
         }
@@ -143,6 +169,9 @@ export class UIController {
   initEngineListeners() {
     this.engine.subscribe(() => {
       this.updateUI();
+      if (this.activeModalNodeId !== null) {
+        this.renderNodeModalContent(this.activeModalNodeId);
+      }
     });
   }
 
@@ -326,6 +355,159 @@ export class UIController {
     container.innerHTML = html;
   }
 
+  /**
+   * Node Details Popup Modal Handler
+   */
+  showNodeModal(nodeId) {
+    this.activeModalNodeId = nodeId;
+    const overlay = document.getElementById('nodeModalOverlay');
+    this.renderNodeModalContent(nodeId);
+    overlay?.classList.add('open');
+  }
+
+  renderNodeModalContent(nodeId) {
+    const node = this.engine.nodes[nodeId];
+    if (!node) return;
+
+    const titleContainer = document.getElementById('nodeModalTitle');
+    const bodyContainer = document.getElementById('nodeModalBody');
+    const qThreshold = this.engine.quorumThreshold;
+
+    const roleBadge = node.isLeader 
+      ? '<span style="background:rgba(245, 158, 11, 0.2); color:#f59e0b; padding:2px 8px; border-radius:4px; font-size:0.75rem; border:1px solid #f59e0b;">★ PRIMARY LEADER</span>'
+      : (node.behavior !== 'honest' 
+          ? `<span style="background:rgba(244, 63, 94, 0.2); color:#f43f5e; padding:2px 8px; border-radius:4px; font-size:0.75rem; border:1px solid #f43f5e;">⚠ FAULTY (${node.behavior.toUpperCase()})</span>`
+          : '<span style="background:rgba(16, 185, 129, 0.2); color:#34d399; padding:2px 8px; border-radius:4px; font-size:0.75rem; border:1px solid #10b981;">🟢 HONEST NODE</span>');
+
+    if (titleContainer) {
+      titleContainer.innerHTML = `
+        <span style="font-family:var(--font-code);">Node ${node.id} Inspector</span>
+        ${roleBadge}
+      `;
+    }
+
+    if (!bodyContainer) return;
+
+    // Build Modal Content Body
+    let html = `
+      <!-- State Overview Card -->
+      <div style="background:rgba(0,0,0,0.25); padding:1rem; border-radius:var(--radius-md); border:1px solid rgba(255,255,255,0.05); display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <div style="font-size:0.8rem; color:var(--text-muted);">現在のフェーズ状態</div>
+          <div style="font-size:1.1rem; font-weight:700; color:#fff; font-family:var(--font-code);">${node.state}</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:0.8rem; color:var(--text-muted);">無効票の拒否件数</div>
+          <div style="font-size:1.1rem; font-weight:700; color:${node.rejectedCount > 0 ? '#f43f5e' : '#34d399'}; font-family:var(--font-code);">
+            ${node.rejectedCount} 件 拒否/破棄
+          </div>
+        </div>
+      </div>
+
+      <!-- 1. Pre-Prepare Proposal Received -->
+      <div>
+        <h4 style="font-size:0.9rem; color:#fff; margin-bottom:0.5rem; display:flex; justify-content:space-between;">
+          <span>1. 受信した提案 (Pre-Prepare Payload)</span>
+          <span style="font-size:0.8rem; font-weight:normal; color:var(--text-muted);">From: Node ${this.engine.leaderId}</span>
+        </h4>
+        ${node.preprepareReceived ? `
+          <div style="background:rgba(168, 85, 247, 0.1); border:1px solid rgba(168, 85, 247, 0.3); padding:0.75rem; border-radius:var(--radius-md); font-family:var(--font-code); font-size:0.825rem;">
+            <div><b>Transaction:</b> "${node.preprepareReceived.val}"</div>
+            <div><b>Digest:</b> <span style="color:#c084fc;">${node.preprepareReceived.digest}</span></div>
+          </div>
+        ` : `
+          <div style="font-size:0.825rem; color:var(--text-dim); padding:0.75rem; background:rgba(0,0,0,0.2); border-radius:var(--radius-md);">
+            未受信 (Pre-Prepare提案待ち)
+          </div>
+        `}
+      </div>
+
+      <!-- 2. Received Prepare Votes History -->
+      <div>
+        <h4 style="font-size:0.9rem; color:#fff; margin-bottom:0.5rem; display:flex; justify-content:space-between; align-items:center;">
+          <span>2. 受信した Prepare 投票の内訳 & 検証履歴</span>
+          <span style="font-size:0.75rem; font-family:var(--font-code); color:${node.isPrepared ? '#34d399' : '#fbbf24'};">
+            ${node.isPrepared ? `✅ クオラム達成 (≥ ${qThreshold}票)` : `⏳ 検証中 (${node.receivedPrepares.filter(p=>p.isValid).length}/${qThreshold}票)`}
+          </span>
+        </h4>
+
+        <div style="display:flex; flex-direction:column; gap:0.4rem;">
+    `;
+
+    if (node.receivedPrepares.length === 0) {
+      html += `
+        <div style="font-size:0.825rem; color:var(--text-dim); padding:0.75rem; background:rgba(0,0,0,0.2); border-radius:var(--radius-md);">
+          まだ Prepare 投票を受信していません。
+        </div>
+      `;
+    } else {
+      node.receivedPrepares.forEach(prep => {
+        const rowClass = prep.isValid ? 'valid' : 'invalid';
+        const badge = prep.isValid 
+          ? '<span style="color:#34d399; font-weight:600;">✅ 有効票 (VALID VOTE)</span>' 
+          : '<span style="color:#f43f5e; font-weight:600;">🚫 無効/裏切り票 (REJECTED)</span>';
+
+        html += `
+          <div class="vote-item-row ${rowClass}">
+            <div>
+              <span style="font-weight:600; font-family:var(--font-code);">Node ${prep.senderId}</span>
+              <span style="color:var(--text-muted); margin-left:0.5rem; font-family:var(--font-code);">Digest: ${prep.digest}</span>
+            </div>
+            <div>${badge}</div>
+          </div>
+        `;
+      });
+    }
+
+    html += `
+        </div>
+      </div>
+
+      <!-- 3. Received Commit Votes History -->
+      <div>
+        <h4 style="font-size:0.9rem; color:#fff; margin-bottom:0.5rem; display:flex; justify-content:space-between; align-items:center;">
+          <span>3. 受信した Commit 投票の内訳 & 確定状態</span>
+          <span style="font-size:0.75rem; font-family:var(--font-code); color:${node.isCommitted ? '#34d399' : '#fbbf24'};">
+            ${node.isCommitted ? `✅ トランザクション確定 (COMMITTED)` : `⏳ 未確定`}
+          </span>
+        </h4>
+
+        <div style="display:flex; flex-direction:column; gap:0.4rem;">
+    `;
+
+    if (node.receivedCommits.length === 0) {
+      html += `
+        <div style="font-size:0.825rem; color:var(--text-dim); padding:0.75rem; background:rgba(0,0,0,0.2); border-radius:var(--radius-md);">
+          まだ Commit 投票を受信していません。
+        </div>
+      `;
+    } else {
+      node.receivedCommits.forEach(comm => {
+        const rowClass = comm.isValid ? 'valid' : 'invalid';
+        const badge = comm.isValid 
+          ? '<span style="color:#34d399; font-weight:600;">✅ Commit 承認</span>' 
+          : '<span style="color:#f43f5e; font-weight:600;">🚫 Commit 否決</span>';
+
+        html += `
+          <div class="vote-item-row ${rowClass}">
+            <div>
+              <span style="font-weight:600; font-family:var(--font-code);">Node ${comm.senderId}</span>
+              <span style="color:var(--text-muted); margin-left:0.5rem; font-family:var(--font-code);">Digest: ${comm.digest}</span>
+            </div>
+            <div>${badge}</div>
+          </div>
+        `;
+      });
+    }
+
+    html += `
+        </div>
+      </div>
+    `;
+
+    bodyContainer.innerHTML = html;
+  }
+
   renderMatrixTable() {
     const tbody = document.getElementById('matrixTableBody');
     if (!tbody) return;
@@ -347,7 +529,7 @@ export class UIController {
       const replyClass = node.replied ? 'reached' : 'pending';
 
       html += `
-        <tr>
+        <tr style="cursor:pointer;" class="matrix-row-clickable" data-node="${node.id}">
           <td style="font-weight:600; font-family:var(--font-code);">
             Node ${node.id} ${node.isLeader ? '★' : ''} ${node.rejectedCount > 0 ? `<span style="color:#f43f5e; font-size:0.75rem;">(🚫 ${node.rejectedCount}件拒否)</span>` : ''}
           </td>
@@ -360,6 +542,14 @@ export class UIController {
     });
 
     tbody.innerHTML = html;
+
+    // Allow clicking matrix row to open Inspector popup too!
+    tbody.querySelectorAll('.matrix-row-clickable').forEach(row => {
+      row.addEventListener('click', () => {
+        const nodeId = parseInt(row.getAttribute('data-node'), 10);
+        this.showNodeModal(nodeId);
+      });
+    });
   }
 
   renderLogs() {
