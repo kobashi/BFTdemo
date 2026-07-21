@@ -1,6 +1,6 @@
 /**
  * Practical Byzantine Fault Tolerance (PBFT) Simulation Engine
- * Manages consensus state, rounds, node behaviors, and quorum calculations.
+ * Manages consensus state, rounds, node behaviors, vote tallies, and explicit rejection tracking.
  */
 
 export class BFTEngine {
@@ -11,9 +11,15 @@ export class BFTEngine {
     this.currentPhase = 'REQUEST'; // REQUEST, PREPREPARE, PREPARE, COMMIT, REPLY, COMPLETED, FAILED
     this.currentView = 0;
     this.sequenceNumber = 1;
-    this.requestPayload = { val: "TRANSFER $100 -> ALICE", digest: "d_0x8f3" };
+    this.validPayload = { val: "TRANSFER $100 -> ALICE", digest: "d_VALID_0x8F3" };
     
     this.inFlightMessages = [];
+    this.rejectedMessages = []; // Track explicitly filtered/discarded messages
+    this.voteTallies = {
+      prepare: new Map(), // digest -> array of senderIds
+      commit: new Map()   // digest -> array of senderIds
+    };
+
     this.logs = [];
     this.onStateChangeCallbacks = [];
     
@@ -48,11 +54,12 @@ export class BFTEngine {
         behavior: 'honest', // 'honest', 'silent', 'lie_split', 'corrupt'
         state: 'IDLE',
         preprepareReceived: null,
-        prepareStore: new Map(), // senderId -> digest
-        commitStore: new Map(),  // senderId -> digest
+        receivedPrepares: [], // array of { senderId, digest, isValid }
+        receivedCommits: [],  // array of { senderId, digest, isValid }
         isPrepared: false,
         isCommitted: false,
-        replied: false
+        replied: false,
+        rejectedCount: 0
       });
     }
   }
@@ -82,6 +89,8 @@ export class BFTEngine {
   reset() {
     this.currentPhase = 'REQUEST';
     this.inFlightMessages = [];
+    this.rejectedMessages = [];
+    this.voteTallies = { prepare: new Map(), commit: new Map() };
     this.logs = [];
     this.initNodes();
     this.addLog('system', `Simulation reset. N=${this.totalNodes}, Leader=Node ${this.leaderId}`);
@@ -127,14 +136,13 @@ export class BFTEngine {
   }
 
   executeRequestPhase() {
-    this.addLog('system', `Client submits request: "${this.requestPayload.val}" to Primary Node ${this.leaderId}`);
+    this.addLog('system', `Client submits transaction request: "${this.validPayload.val}" to Primary Node ${this.leaderId}`);
     
-    // Animate Client -> Leader packet
     this.inFlightMessages.push({
       from: 'CLIENT',
       to: this.leaderId,
       type: 'REQUEST',
-      payload: { ...this.requestPayload },
+      payload: { ...this.validPayload },
       progress: 0
     });
 
@@ -152,25 +160,24 @@ export class BFTEngine {
       return;
     }
 
-    this.addLog('preprepare', `Primary Node ${leader.id} broadcasts Pre-Prepare message to all nodes.`);
+    this.addLog('preprepare', `Primary Node ${leader.id} broadcasts Pre-Prepare proposal.`);
     
-    // Leader accepts its own proposal
-    leader.preprepareReceived = { ...this.requestPayload };
+    leader.preprepareReceived = { ...this.validPayload };
     leader.state = 'PREPREPARED';
 
     for (let target of this.nodes) {
       if (target.id === leader.id) continue;
 
-      let payload = { ...this.requestPayload };
+      let payload = { ...this.validPayload };
       
       // Handle leader Byzantine behavior
       if (leader.behavior === 'corrupt') {
-        payload.digest = "d_CORRUPTED_FAKE";
+        payload.val = "FORGED $9999 -> HACKER";
+        payload.digest = "d_FORGED_BYZ";
       } else if (leader.behavior === 'lie_split') {
-        // Send true message to even nodes, false digest to odd nodes
         if (target.id % 2 === 1) {
-          payload.val = "TRANSFER $9999 -> HACKER";
-          payload.digest = "d_FORGED_TRANS";
+          payload.val = "FORGED $9999 -> HACKER";
+          payload.digest = "d_FORGED_BYZ";
         }
       }
 
@@ -188,33 +195,41 @@ export class BFTEngine {
   }
 
   executePreparePhase() {
-    this.addLog('prepare', `Nodes process Pre-Prepare and broadcast Prepare messages across network.`);
+    this.addLog('prepare', `Nodes evaluate Pre-Prepare proposals and broadcast Prepare votes.`);
 
-    // First deliver pre-prepare payloads to targets
+    // 1. Deliver Pre-Prepare to nodes and store received
     for (let node of this.nodes) {
       if (node.id === this.leaderId) continue;
       if (node.behavior === 'silent') continue;
       
       // Receive payload from leader
-      node.preprepareReceived = { ...this.requestPayload };
+      let receivedVal = { ...this.validPayload };
+      if (this.nodes[this.leaderId].behavior === 'lie_split' && node.id % 2 === 1) {
+        receivedVal = { val: "FORGED $9999 -> HACKER", digest: "d_FORGED_BYZ" };
+      } else if (this.nodes[this.leaderId].behavior === 'corrupt') {
+        receivedVal = { val: "FORGED $9999 -> HACKER", digest: "d_FORGED_BYZ" };
+      }
+
+      node.preprepareReceived = receivedVal;
       node.state = 'PREPREPARED';
     }
 
-    // Now nodes broadcast Prepare to everyone
+    // 2. Broadcast Prepare votes across network
     for (let sender of this.nodes) {
       if (sender.behavior === 'silent') {
-        this.addLog('system', `Node ${sender.id} is silent, sending no Prepare messages.`);
+        this.addLog('system', `Node ${sender.id} is Silent (Crash Fault). No Prepare message sent.`);
         continue;
       }
 
       for (let target of this.nodes) {
         if (target.id === sender.id) continue;
 
-        let digest = this.requestPayload.digest;
+        let digest = sender.preprepareReceived ? sender.preprepareReceived.digest : this.validPayload.digest;
+        
         if (sender.behavior === 'corrupt') {
-          digest = "d_CORRUPT_PREPARE";
+          digest = "d_FAKE_BYZ_VOTE";
         } else if (sender.behavior === 'lie_split' && target.id % 2 === 0) {
-          digest = "d_LIE_SPLIT_PREPARE";
+          digest = "d_FAKE_BYZ_VOTE";
         }
 
         this.inFlightMessages.push({
@@ -227,37 +242,67 @@ export class BFTEngine {
       }
     }
 
-    // Process quorum check for Prepare
-    this.checkPrepareQuorums();
+    // 3. Process voting & explicit filtering of invalid/traitor messages
+    this.processPrepareVoting();
     this.currentPhase = 'COMMIT';
     this.notifyStateChange();
   }
 
-  checkPrepareQuorums() {
-    const validDigest = this.requestPayload.digest;
+  processPrepareVoting() {
     const requiredQuorum = this.quorumThreshold; // 2f + 1
+    const prepareTallies = new Map(); // digest -> list of senders
 
     for (let node of this.nodes) {
       if (node.behavior === 'silent') continue;
 
-      let validPrepares = 1; // Include self/leader preprepare
-      
+      // Collect prepare votes sent to this node
+      node.receivedPrepares = [];
+      const expectedDigest = this.validPayload.digest;
+
       for (let sender of this.nodes) {
-        if (sender.id === node.id) continue;
-        if (sender.behavior === 'honest' || (sender.behavior !== 'silent' && sender.behavior !== 'corrupt')) {
-          validPrepares++;
+        let digest = sender.preprepareReceived ? sender.preprepareReceived.digest : expectedDigest;
+        
+        if (sender.behavior === 'corrupt') digest = "d_FAKE_BYZ_VOTE";
+        else if (sender.behavior === 'lie_split' && node.id % 2 === 0) digest = "d_FAKE_BYZ_VOTE";
+
+        if (sender.behavior === 'silent') continue;
+
+        const isValid = (digest === expectedDigest);
+        node.receivedPrepares.push({ senderId: sender.id, digest, isValid });
+
+        // Update global vote tally
+        if (!prepareTallies.has(digest)) prepareTallies.set(digest, []);
+        if (!prepareTallies.get(digest).includes(sender.id)) {
+          prepareTallies.get(digest).push(sender.id);
+        }
+
+        // Record explicit rejection if invalid
+        if (!isValid) {
+          node.rejectedCount++;
+          this.rejectedMessages.push({
+            phase: 'PREPARE',
+            nodeId: node.id,
+            fromNodeId: sender.id,
+            badDigest: digest,
+            reason: 'Digest mismatch with valid proposal (Traitor message filtered out)'
+          });
+          this.addLog('error', `🚫 Node ${node.id} REJECTED invalid Prepare vote from Traitor Node ${sender.id} (Digest: ${digest})`);
         }
       }
 
-      if (validPrepares >= requiredQuorum) {
+      // Count valid votes for valid proposal digest
+      const validVoteCount = node.receivedPrepares.filter(p => p.isValid).length;
+      if (validVoteCount >= requiredQuorum) {
         node.isPrepared = true;
         node.state = 'PREPARED';
       }
     }
+
+    this.voteTallies.prepare = prepareTallies;
   }
 
   executeCommitPhase() {
-    this.addLog('commit', `Prepared nodes broadcast Commit messages to achieve total order commitment.`);
+    this.addLog('commit', `Prepared nodes broadcast Commit votes to reach final order commitment.`);
 
     for (let sender of this.nodes) {
       if (!sender.isPrepared || sender.behavior === 'silent') continue;
@@ -265,8 +310,8 @@ export class BFTEngine {
       for (let target of this.nodes) {
         if (target.id === sender.id) continue;
 
-        let digest = this.requestPayload.digest;
-        if (sender.behavior === 'corrupt') digest = "d_BAD_COMMIT";
+        let digest = this.validPayload.digest;
+        if (sender.behavior === 'corrupt') digest = "d_BAD_COMMIT_VOTE";
 
         this.inFlightMessages.push({
           from: sender.id,
@@ -278,62 +323,83 @@ export class BFTEngine {
       }
     }
 
-    this.checkCommitQuorums();
+    this.processCommitVoting();
     this.currentPhase = 'REPLY';
     this.notifyStateChange();
   }
 
-  checkCommitQuorums() {
+  processCommitVoting() {
     const requiredQuorum = this.quorumThreshold; // 2f + 1
+    const commitTallies = new Map();
 
-    let committedCount = 0;
     for (let node of this.nodes) {
       if (node.behavior === 'silent') continue;
 
-      let validCommits = 0;
+      node.receivedCommits = [];
+      const expectedDigest = this.validPayload.digest;
+
       for (let sender of this.nodes) {
-        if (sender.behavior === 'honest') validCommits++;
+        if (!sender.isPrepared || sender.behavior === 'silent') continue;
+
+        let digest = expectedDigest;
+        if (sender.behavior === 'corrupt') digest = "d_BAD_COMMIT_VOTE";
+
+        const isValid = (digest === expectedDigest);
+        node.receivedCommits.push({ senderId: sender.id, digest, isValid });
+
+        if (!commitTallies.has(digest)) commitTallies.set(digest, []);
+        if (!commitTallies.get(digest).includes(sender.id)) {
+          commitTallies.get(digest).push(sender.id);
+        }
+
+        if (!isValid) {
+          node.rejectedCount++;
+          this.rejectedMessages.push({
+            phase: 'COMMIT',
+            nodeId: node.id,
+            fromNodeId: sender.id,
+            badDigest: digest,
+            reason: 'Invalid Commit vote filtered out'
+          });
+          this.addLog('error', `🚫 Node ${node.id} REJECTED invalid Commit vote from Traitor Node ${sender.id}`);
+        }
       }
 
+      const validCommits = node.receivedCommits.filter(c => c.isValid).length;
       if (validCommits >= requiredQuorum) {
         node.isCommitted = true;
         node.state = 'COMMITTED';
-        committedCount++;
       }
     }
 
-    if (committedCount >= requiredQuorum) {
-      this.addLog('system', `Quorum reached! ${committedCount}/${this.totalNodes} nodes achieved COMMITTED state.`);
-    } else {
-      this.addLog('error', `Failed to reach commit quorum (${committedCount}/${requiredQuorum} needed).`);
-    }
+    this.voteTallies.commit = commitTallies;
   }
 
   executeReplyPhase() {
-    this.addLog('reply', `Committed nodes reply directly to the Client.`);
+    this.addLog('reply', `Committed nodes send final transaction execution replies to Client.`);
 
-    let repliesCount = 0;
+    let validRepliesCount = 0;
     for (let node of this.nodes) {
       if (node.isCommitted && node.behavior !== 'silent') {
         node.replied = true;
-        repliesCount++;
+        validRepliesCount++;
 
         this.inFlightMessages.push({
           from: node.id,
           to: 'CLIENT',
           type: 'REPLY',
-          payload: { result: "SUCCESS", node: node.id },
+          payload: { result: "SUCCESS", node: node.id, digest: this.validPayload.digest },
           progress: 0
         });
       }
     }
 
-    if (repliesCount >= this.quorumThreshold) {
+    if (validRepliesCount >= this.quorumThreshold) {
       this.currentPhase = 'COMPLETED';
-      this.addLog('system', `🎉 CONSENSUS ACHIEVED! Client received ${repliesCount} valid matching replies (Threshold ${this.quorumThreshold}).`);
+      this.addLog('system', `🎉 CONSENSUS ACHIEVED! Client received ${validRepliesCount} matching valid replies (Required threshold: ${this.quorumThreshold}). Traitor opinions successfully isolated!`);
     } else {
       this.currentPhase = 'FAILED';
-      this.addLog('error', `❌ CONSENSUS FAILED! Client received only ${repliesCount}/${this.quorumThreshold} matching replies.`);
+      this.addLog('error', `❌ CONSENSUS FAILED! Client received only ${validRepliesCount}/${this.quorumThreshold} valid replies. Quorum condition unsatisfied.`);
     }
 
     this.notifyStateChange();

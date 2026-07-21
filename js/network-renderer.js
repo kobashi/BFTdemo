@@ -1,6 +1,7 @@
 /**
  * Network Canvas Visualizer for BFT Simulation
- * Renders nodes, topology links, phase states, glowing pulses, and message particles.
+ * Renders nodes, topology links, phase states, glowing pulses, and message particles,
+ * plus explicit visual indicators for traitor message rejection / filtering.
  */
 
 export class NetworkRenderer {
@@ -12,6 +13,7 @@ export class NetworkRenderer {
     this.nodePositions = new Map();
     this.clientPosition = { x: 0, y: 0 };
     this.activeParticles = [];
+    this.rejectionBadges = []; // floating ❌ icons
     
     this.animId = null;
     this.resizeCanvas();
@@ -37,13 +39,10 @@ export class NetworkRenderer {
     const centerY = this.height / 2 + 20;
     const radius = Math.min(this.width, this.height) * 0.32;
     
-    // Position Client at top
     this.clientPosition = { x: centerX, y: 60 };
 
-    // Arrange nodes evenly in a circle around center
     const total = this.engine.totalNodes;
     for (let i = 0; i < total; i++) {
-      // Start angle from top (-PI/2)
       const angle = (i * 2 * Math.PI / total) - (Math.PI / 2);
       const x = centerX + radius * Math.cos(angle);
       const y = centerY + radius * Math.sin(angle);
@@ -66,6 +65,20 @@ export class NetworkRenderer {
           speed: 0.015,
           type: msg.type,
           label: msg.payload?.digest || msg.type
+        });
+      }
+    }
+
+    // Process new rejected messages for floating badges
+    while (this.engine.rejectedMessages.length > 0) {
+      const rej = this.engine.rejectedMessages.shift();
+      const pos = this.nodePositions.get(rej.nodeId);
+      if (pos) {
+        this.rejectionBadges.push({
+          x: pos.x,
+          y: pos.y - 35,
+          opacity: 1.0,
+          label: `🚫 REJECTED Traitor Vote (N${rej.fromNodeId})`
         });
       }
     }
@@ -94,24 +107,17 @@ export class NetworkRenderer {
     this.ctx.clearRect(0, 0, this.width, this.height);
     this.calculatePositions();
 
-    // 1. Draw Network Links (Background mesh)
     this.drawLinks();
-
-    // 2. Draw Client Node
     this.drawClientNode();
-
-    // 3. Draw Engine Consensus Nodes
     this.drawNodes();
-
-    // 4. Update and Draw Particles
     this.drawParticles();
+    this.drawRejectionBadges();
   }
 
   drawLinks() {
     const total = this.engine.totalNodes;
     this.ctx.lineWidth = 1;
     
-    // Mesh links between all consensus nodes
     for (let i = 0; i < total; i++) {
       const p1 = this.nodePositions.get(i);
       for (let j = i + 1; j < total; j++) {
@@ -125,7 +131,6 @@ export class NetworkRenderer {
         }
       }
 
-      // Link to Client
       if (p1) {
         this.ctx.beginPath();
         this.ctx.setLineDash([4, 4]);
@@ -170,20 +175,17 @@ export class NetworkRenderer {
       const isByzantine = node.behavior !== 'honest';
       const isSilent = node.behavior === 'silent';
 
-      let strokeColor = '#10b981'; // Green for Honest
+      let strokeColor = '#10b981';
       let glowColor = 'rgba(16, 185, 129, 0.4)';
-      let badgeLabel = 'HONEST';
 
       if (isLeader) {
-        strokeColor = '#f59e0b'; // Gold
+        strokeColor = '#f59e0b';
         glowColor = 'rgba(245, 158, 11, 0.5)';
-        badgeLabel = 'PRIMARY';
       }
       
       if (isByzantine) {
-        strokeColor = '#f43f5e'; // Red
+        strokeColor = '#f43f5e';
         glowColor = 'rgba(244, 63, 94, 0.5)';
-        badgeLabel = node.behavior.toUpperCase();
       }
 
       if (isSilent) {
@@ -191,7 +193,7 @@ export class NetworkRenderer {
         glowColor = 'transparent';
       }
 
-      // Draw Node Outer Circle with Glow
+      // Draw Node Outer Circle
       this.ctx.save();
       this.ctx.beginPath();
       this.ctx.arc(x, y, 26, 0, Math.PI * 2);
@@ -210,12 +212,12 @@ export class NetworkRenderer {
       this.ctx.textBaseline = 'middle';
       this.ctx.fillText(`N${node.id}`, x, y - 2);
 
-      // Node State / Role Subtext
+      // Role Subtext
       this.ctx.font = '9px Inter, sans-serif';
       this.ctx.fillStyle = isLeader ? '#f59e0b' : (isByzantine ? '#f43f5e' : '#94a3b8');
-      this.ctx.fillText(isLeader ? '★ LEADER' : (isByzantine ? '⚠ FAULTY' : 'NODE'), x, y + 12);
+      this.ctx.fillText(isLeader ? '★ LEADER' : (isByzantine ? '⚠ FAULTY' : 'HONEST'), x, y + 12);
 
-      // Draw State Indicator Badge below node
+      // Node State Pill
       this.drawNodeStatusPill(node, x, y + 42);
 
       this.ctx.restore();
@@ -228,11 +230,11 @@ export class NetworkRenderer {
     let color = '#94a3b8';
 
     if (node.isCommitted) {
-      text = 'COMMITTED';
+      text = '✓ COMMITTED';
       bg = 'rgba(16, 185, 129, 0.2)';
       color = '#34d399';
     } else if (node.isPrepared) {
-      text = 'PREPARED';
+      text = '✓ PREPARED';
       bg = 'rgba(59, 130, 246, 0.2)';
       color = '#60a5fa';
     } else if (node.state === 'PREPREPARED') {
@@ -277,7 +279,6 @@ export class NetworkRenderer {
       const color = this.getPhaseColor(p.type);
 
       this.ctx.save();
-      // Particle trail
       this.ctx.beginPath();
       this.ctx.arc(currentX, currentY, 6, 0, Math.PI * 2);
       this.ctx.fillStyle = color;
@@ -285,10 +286,42 @@ export class NetworkRenderer {
       this.ctx.shadowBlur = 10;
       this.ctx.fill();
 
-      // Particle label badge
       this.ctx.font = 'bold 9px JetBrains Mono, monospace';
       this.ctx.fillStyle = '#ffffff';
       this.ctx.fillText(p.type, currentX + 8, currentY - 8);
+
+      this.ctx.restore();
+    }
+  }
+
+  drawRejectionBadges() {
+    for (let i = this.rejectionBadges.length - 1; i >= 0; i--) {
+      const b = this.rejectionBadges[i];
+      b.y -= 0.3; // Floating up
+      b.opacity -= 0.008;
+
+      if (b.opacity <= 0) {
+        this.rejectionBadges.splice(i, 1);
+        continue;
+      }
+
+      this.ctx.save();
+      this.ctx.globalAlpha = b.opacity;
+      this.ctx.font = 'bold 10px Inter, sans-serif';
+      
+      const metrics = this.ctx.measureText(b.label);
+      const w = metrics.width + 12;
+      const h = 18;
+
+      this.ctx.beginPath();
+      this.ctx.roundRect(b.x - w/2, b.y - h/2, w, h, 4);
+      this.ctx.fillStyle = 'rgba(244, 63, 94, 0.9)';
+      this.ctx.fill();
+
+      this.ctx.fillStyle = '#ffffff';
+      this.ctx.textAlign = 'center';
+      this.ctx.textBaseline = 'middle';
+      this.ctx.fillText(b.label, b.x, b.y);
 
       this.ctx.restore();
     }

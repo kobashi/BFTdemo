@@ -1,6 +1,7 @@
 /**
  * UI Controller for BFT Educational Web Application
- * Handles events, controls, preset switching, matrix rendering, and log feeds.
+ * Handles controls, preset switching, matrix rendering, log feeds, and
+ * the explicit Traitor Vote Exclusion & Tally Inspector.
  */
 
 import { BFTEngine } from './bft-engine.js';
@@ -23,7 +24,8 @@ export class UIController {
     this.initPresets();
     this.initEngineListeners();
 
-    // Initial render
+    // Default setup: Set Node 3 to lie_split to show traitor exclusion immediately!
+    this.engine.setNodeBehavior(3, 'lie_split');
     this.updateUI();
   }
 
@@ -49,7 +51,6 @@ export class UIController {
   }
 
   initControls() {
-    // Total Nodes Slider
     const nodeSlider = document.getElementById('sliderNodes');
     const nodeVal = document.getElementById('valNodes');
     nodeSlider?.addEventListener('input', (e) => {
@@ -59,14 +60,12 @@ export class UIController {
       this.updateLeaderSelectOptions();
     });
 
-    // Leader Select
     const leaderSelect = document.getElementById('selectLeader');
     leaderSelect?.addEventListener('change', (e) => {
       const id = parseInt(e.target.value, 10);
       this.engine.setLeaderId(id);
     });
 
-    // Playback buttons
     document.getElementById('btnReset')?.addEventListener('click', () => {
       this.pause();
       this.engine.reset();
@@ -81,10 +80,9 @@ export class UIController {
       this.togglePlay();
     });
 
-    // Speed Slider
     const speedSlider = document.getElementById('sliderSpeed');
     speedSlider?.addEventListener('input', (e) => {
-      this.playSpeed = 2150 - parseInt(e.target.value, 10); // inverted for speed
+      this.playSpeed = 2150 - parseInt(e.target.value, 10);
       if (this.isPlaying) {
         this.pause();
         this.play();
@@ -127,7 +125,6 @@ export class UIController {
         this.engine.setLeaderId(p.leader);
         this.updateLeaderSelectOptions();
 
-        // Apply behaviors
         for (let nodeId in p.behaviors) {
           this.engine.setNodeBehavior(parseInt(nodeId, 10), p.behaviors[nodeId]);
         }
@@ -183,6 +180,7 @@ export class UIController {
     this.updateStatusBanner();
     this.updatePhaseBadge();
     this.renderNodeConfigList();
+    this.renderExclusionInspector();
     this.renderMatrixTable();
     this.renderLogs();
   }
@@ -253,7 +251,6 @@ export class UIController {
 
     container.innerHTML = html;
 
-    // Attach event handlers to selects
     container.querySelectorAll('.node-behavior-select').forEach(sel => {
       sel.addEventListener('change', (e) => {
         const nodeId = parseInt(sel.getAttribute('data-node'), 10);
@@ -261,6 +258,69 @@ export class UIController {
         this.engine.setNodeBehavior(nodeId, behavior);
       });
     });
+  }
+
+  /**
+   * Render the Dedicated Traitor Vote Exclusion & Tally Inspector
+   */
+  renderExclusionInspector() {
+    const container = document.getElementById('exclusionInspector');
+    if (!container) return;
+
+    const qThreshold = this.engine.quorumThreshold;
+    const prepareTallies = this.engine.voteTallies.prepare;
+
+    let html = `
+      <div style="margin-bottom:0.75rem; display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:0.9rem; font-weight:600; color:#fff;">投票集計 & 裏切り意見の排除状況 (Vote Tally & Filtering)</span>
+        <span style="font-size:0.8rem; font-family:var(--font-code); color:var(--accent-primary);">必要票数 (2f+1): ${qThreshold}票</span>
+      </div>
+    `;
+
+    if (prepareTallies.size === 0) {
+      html += `
+        <div style="font-size:0.85rem; color:var(--text-muted); padding:1rem; text-align:center; background:rgba(0,0,0,0.2); border-radius:var(--radius-md);">
+          ▶ 「▶ 再生」または 「❯ ステップ進む」を押すと、Prepareフェーズでの投票集計と裏切り意見の排除プロセスがここにリアルタイム表示されます。
+        </div>
+      `;
+    } else {
+      html += `<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:0.75rem;">`;
+
+      prepareTallies.forEach((senders, digest) => {
+        const isValid = (digest === this.engine.validPayload.digest);
+        const isQuorumPassed = senders.length >= qThreshold;
+
+        const border = isValid ? (isQuorumPassed ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255,255,255,0.1)') : 'rgba(244, 63, 94, 0.4)';
+        const bg = isValid ? (isQuorumPassed ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.02)') : 'rgba(244, 63, 94, 0.1)';
+        const badgeText = isValid ? (isQuorumPassed ? '✅ クオラム達成 (合意成立)' : '⏳ 票数不足') : '🚫 自動排除 (Traitor Excluded)';
+        const badgeColor = isValid ? (isQuorumPassed ? '#34d399' : '#94a3b8') : '#f87171';
+
+        html += `
+          <div style="background:${bg}; border:1px solid ${border}; border-radius:var(--radius-md); padding:0.85rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
+              <span style="font-family:var(--font-code); font-size:0.8rem; font-weight:700; color:${isValid ? '#60a5fa' : '#f43f5e'};">
+                ${digest}
+              </span>
+              <span style="font-size:0.75rem; font-weight:700; color:${badgeColor}; padding:2px 6px; border-radius:4px; background:rgba(0,0,0,0.3);">
+                ${badgeText}
+              </span>
+            </div>
+            <div style="font-size:0.85rem; color:var(--text-main); margin-bottom:0.3rem;">
+              獲得票数: <b>${senders.length} / ${qThreshold}</b> 票 (${senders.map(id => `Node ${id}`).join(', ')})
+            </div>
+            <div style="font-size:0.75rem; color:var(--text-muted);">
+              ${isValid 
+                ? '正当なトランザクション提案。正常ノード群の支持により採用。' 
+                : '裏切りノードによる改ざん投票。2f+1の賛成票に達しないため破棄されました。'}
+            </div>
+          </div>
+        `;
+      });
+
+      html += `</div>`;
+    }
+
+    container.innerHTML = html;
   }
 
   renderMatrixTable() {
@@ -286,7 +346,7 @@ export class UIController {
       html += `
         <tr>
           <td style="font-weight:600; font-family:var(--font-code);">
-            Node ${node.id} ${node.isLeader ? '★' : ''}
+            Node ${node.id} ${node.isLeader ? '★' : ''} ${node.rejectedCount > 0 ? `<span style="color:#f43f5e; font-size:0.75rem;">(🚫 ${node.rejectedCount}件拒否)</span>` : ''}
           </td>
           <td><span class="quorum-pill ${preClass}">${isPre}</span></td>
           <td><span class="quorum-pill ${prepClass}">${prepStatus}</span></td>
@@ -318,7 +378,6 @@ export class UIController {
   }
 }
 
-// Bootstrap app on DOM load
 window.addEventListener('DOMContentLoaded', () => {
   new UIController();
 });

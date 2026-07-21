@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>BFT Consensus Interactive Simulator | PBFT Network Learning Tool</title>
-  <meta name="description" content="Interactive learning web app for Byzantine Fault Tolerance (PBFT) consensus algorithms. Adjust parameters N and F, observe real-time message passing, and master N >= 3f + 1 rule.">
+  <meta name="description" content="Interactive learning web app for Byzantine Fault Tolerance (PBFT) consensus algorithms. Adjust parameters N and F, observe real-time message passing, and visualize traitor vote exclusion.">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -16,7 +16,7 @@
         <div class="logo-icon">BFT</div>
         <div class="logo-title">
           <h1>BFT Consensus Interactive Simulator</h1>
-          <p>ネットワークアルゴリズム学習教材：ビザンチン障害許容（PBFT）合意形成シミュレータ</p>
+          <p>ネットワークアルゴリズム学習教材：ビザンチン障害許容（PBFT）合意形成 ＆ 裏切り者排除シミュレータ</p>
         </div>
       </div>
       <nav>
@@ -52,9 +52,9 @@
           <div class="control-group">
             <label class="control-label">プリセットシナリオ (Presets):</label>
             <div class="preset-grid">
-              <button id="presetStandard" class="btn-preset active">標準合意<br>(N=4, F=1 成功)</button>
-              <button id="presetBreakdown" class="btn-preset">合意崩壊<br>(N=4, F=2 失敗)</button>
-              <button id="presetTraitorLeader" class="btn-preset">裏切りリーダー<br>(Leader 嘘つき)</button>
+              <button id="presetStandard" class="btn-preset active">標準合意<br>(N=4, F=1 裏切り排除)</button>
+              <button id="presetBreakdown" class="btn-preset">合意崩壊<br>(N=4, F=2 多数派乗っ取り)</button>
+              <button id="presetTraitorLeader" class="btn-preset">裏切りリーダー<br>(Leader 偽提案)</button>
               <button id="presetSilentNode" class="btn-preset">沈黙ノード<br>(Node 応答なし)</button>
             </div>
           </div>
@@ -92,7 +92,7 @@
           </div>
         </div>
 
-        <!-- Right Main Visualizer Canvas -->
+        <!-- Right Main Visualizer Canvas & Exclusion Inspector -->
         <div class="visualizer-container">
           <div class="canvas-wrapper">
             <canvas id="networkCanvas"></canvas>
@@ -120,6 +120,14 @@
               <input type="range" id="sliderSpeed" min="100" max="2000" value="1000" style="width: 100px;">
             </div>
           </div>
+
+          <!-- Dedicated Traitor Vote Exclusion & Tally Inspector Panel -->
+          <div class="glass-panel" style="margin-top: 0.25rem;">
+            <div id="exclusionInspector">
+              <!-- Dynamically rendered by ui.js -->
+            </div>
+          </div>
+
         </div>
 
       </div>
@@ -135,7 +143,7 @@
             <h2 class="panel-title">📊 ノード状態 & クオラム達成状況</h2>
           </div>
           <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem;">
-            PBFTでは各段階で <b>2f + 1</b> 以上の同等メッセージ（クオラム）を収集することで状態が進行します。
+            PBFTでは各段階で <b>2f + 1</b> 以上の同等メッセージ（クオラム）を収集することで状態が進行します。裏切りノードの不正メッセージは自動的に拒否・除外されます。
           </p>
           <div class="matrix-container">
             <table class="matrix-table">
@@ -174,9 +182,9 @@
         
         <!-- Mathematical Explanation -->
         <div class="theory-card">
-          <h3>📘 ビザンチン合意形成の基本原理</h3>
+          <h3>📘 ビザンチン合意形成と裏切り者排除の仕組み</h3>
           <p>
-            <b>ビザンチン障害（Byzantine Fault）</b>とは、分散システムにおけるノードが単にクラッシュして停止するだけでなく、誤ったデータや偽のデータを意図的・偶発的に送信する障害を指します。
+            <b>ビザンチン障害（Byzantine Fault）</b>とは、意図的に偽のメッセージや異なる投票（分裂投票）を送信してシステムを混乱させようとするノードが含まれる障害です。
           </p>
           
           <div class="formula-box">
@@ -184,11 +192,8 @@
           </div>
 
           <p style="font-size:0.85rem; color:var(--text-muted);">
-            <b>なぜ 3f + 1 なのか？</b><br>
-            全体のノード数を $N$、悪意ある障害ノード数を $f$ とします。非同期ネットワークでは $f$ 台のノードが応答しない可能性があるため、システムは $N - f$ 台からの応答で判断を下さなければなりません。<br>
-            その $N - f$ 台の中にさらに $f$ 台の偽証ノードが含まれている可能性があるため、正常なノード数 $(N - f) - f$ が障害ノード数 $f$ を上回る必要があります：
-            <br>
-            <code>(N - f) - f > f  ⇒  N - 2f > f  ⇒  N > 3f  ⇒  N ≥ 3f + 1</code>
+            <b>裏切り者が排除される仕組み：</b><br>
+            正常なノード群は、受け取ったメッセージのうち正当な署名とダイジェストを持つものだけを集計します。集まった票数がクオラム閾値 <code>2f + 1</code> に達しない偽の提案（裏切りノードの意見）は<b>「無効（REJECTED）」</b>として即座に破棄されます。裏切り者が $f$ 台以下であれば、正常ノードの票数のみで必ず $2f + 1$ の合意が成立します。
           </p>
 
           <h4 style="color:#fff; margin-top:1.5rem; margin-bottom:0.75rem;">PBFTの3フェーズ手順</h4>
@@ -197,21 +202,21 @@
               <div class="step-num">1</div>
               <div class="step-info">
                 <h4>Pre-Prepare フェーズ</h4>
-                <p>リーダー（Primary）がクライアントの要求を受信し、全バックアップノードへ提案メッセージをブロードキャストします。</p>
+                <p>リーダー（Primary）がトランザクション提案を全ノードへ送信します。</p>
               </div>
             </div>
             <div class="step-item">
               <div class="step-num">2</div>
               <div class="step-info">
-                <h4>Prepare フェーズ</h4>
-                <p>提案を受け取ったノードは妥当性を検証し、全ノード間でお互いにPrepareメッセージを交わします。2f + 1 個の整合メッセージが集まると「PREPARED」状態になります。</p>
+                <h4>Prepare フェーズ (裏切り者の検証 & 排除)</h4>
+                <p>全ノード間でお互いに投票（Prepareメッセージ）を送信。正常ノードは不正なメッセージを破棄し、2f + 1 個の整合メッセージが集まった提案のみを承認（PREPARED）します。</p>
               </div>
             </div>
             <div class="step-item">
               <div class="step-num">3</div>
               <div class="step-info">
                 <h4>Commit フェーズ</h4>
-                <p>全ノード間でCommitメッセージを送信し合い、全体でのトランザクション順序を最終確定します。2f + 1 個集まると「COMMITTED」状態となり、クライアントへ返信します。</p>
+                <p>全ノード間でCommitメッセージを交わし、2f + 1 票に達した正常提案を最終確定（COMMITTED）してクライアントに実行結果を返信します。</p>
               </div>
             </div>
           </div>
@@ -261,7 +266,7 @@
         <div class="guide-code">
 git init
 git add .
-git commit -m "Initial BFT Educational Simulator"
+git commit -m "Update BFT Traitor Exclusion Simulator"
 git branch -M main
 git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.git
 git push -u origin main
