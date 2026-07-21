@@ -17,6 +17,7 @@ export class NetworkRenderer {
     this.activeParticles = [];
     this.rejectionBadges = [];
     this.hoveredNodeId = null;
+    this.particleSpeed = 0.018; // Dynamic speed scaled with UI slider
     
     this.animId = null;
     this.resizeCanvas();
@@ -29,6 +30,13 @@ export class NetworkRenderer {
     });
 
     this.startAnimationLoop();
+  }
+
+  setSpeed(stepMs) {
+    // Scale particle traversal speed according to step delay in ms
+    // Target completion: ~65% of stepMs duration
+    const framesPerStep = Math.max(8, stepMs / 16.6);
+    this.particleSpeed = Math.min(0.12, Math.max(0.005, 1.0 / (framesPerStep * 0.65)));
   }
 
   initCanvasInteractivity() {
@@ -100,7 +108,7 @@ export class NetworkRenderer {
           start: { ...startPos },
           end: { ...endPos },
           progress: 0,
-          speed: 0.015,
+          speed: this.particleSpeed || 0.018,
           type: msg.type,
           label: msg.payload?.digest || msg.type
         });
@@ -231,7 +239,6 @@ export class NetworkRenderer {
         glowColor = 'transparent';
       }
 
-      // Draw Hover highlight ring
       if (isHovered) {
         this.ctx.save();
         this.ctx.beginPath();
@@ -243,7 +250,6 @@ export class NetworkRenderer {
         this.ctx.restore();
       }
 
-      // Draw Node Outer Circle
       this.ctx.save();
       this.ctx.beginPath();
       this.ctx.arc(x, y, isHovered ? 28 : 26, 0, Math.PI * 2);
@@ -255,19 +261,16 @@ export class NetworkRenderer {
       this.ctx.fill();
       this.ctx.stroke();
 
-      // Node ID Text
       this.ctx.fillStyle = '#ffffff';
       this.ctx.font = 'bold 13px JetBrains Mono, monospace';
       this.ctx.textAlign = 'center';
       this.ctx.textBaseline = 'middle';
       this.ctx.fillText(`N${node.id}`, x, y - 2);
 
-      // Role Subtext
       this.ctx.font = '9px Inter, sans-serif';
       this.ctx.fillStyle = isLeader ? '#f59e0b' : (isByzantine ? '#f43f5e' : '#94a3b8');
       this.ctx.fillText(isLeader ? '★ LEADER' : (isByzantine ? '⚠ FAULTY' : 'HONEST'), x, y + 12);
 
-      // Node State Pill
       this.drawNodeStatusPill(node, x, y + 42);
 
       this.ctx.restore();

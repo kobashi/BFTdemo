@@ -86,14 +86,25 @@ export class UIController {
       this.togglePlay();
     });
 
+    // Speed Slider Handler - Syncs both playback step interval and canvas particle travel speed
     const speedSlider = document.getElementById('sliderSpeed');
-    speedSlider?.addEventListener('input', (e) => {
-      this.playSpeed = 2150 - parseInt(e.target.value, 10);
-      if (this.isPlaying) {
-        this.pause();
-        this.play();
-      }
-    });
+    const syncSpeed = (sliderVal) => {
+      const val = parseInt(sliderVal, 10);
+      // slider min 100 (slowest = 2050ms), max 2000 (fastest = 150ms)
+      this.playSpeed = Math.max(150, 2150 - val);
+      this.renderer.setSpeed(this.playSpeed);
+    };
+
+    if (speedSlider) {
+      syncSpeed(speedSlider.value);
+      speedSlider.addEventListener('input', (e) => {
+        syncSpeed(e.target.value);
+        if (this.isPlaying) {
+          this.pause();
+          this.play();
+        }
+      });
+    }
   }
 
   initModalEvents() {
@@ -355,9 +366,6 @@ export class UIController {
     container.innerHTML = html;
   }
 
-  /**
-   * Node Details Popup Modal Handler
-   */
   showNodeModal(nodeId) {
     this.activeModalNodeId = nodeId;
     const overlay = document.getElementById('nodeModalOverlay');
@@ -388,9 +396,7 @@ export class UIController {
 
     if (!bodyContainer) return;
 
-    // Build Modal Content Body
     let html = `
-      <!-- State Overview Card -->
       <div style="background:rgba(0,0,0,0.25); padding:1rem; border-radius:var(--radius-md); border:1px solid rgba(255,255,255,0.05); display:flex; justify-content:space-between; align-items:center;">
         <div>
           <div style="font-size:0.8rem; color:var(--text-muted);">現在のフェーズ状態</div>
@@ -404,7 +410,6 @@ export class UIController {
         </div>
       </div>
 
-      <!-- 1. Pre-Prepare Proposal Received -->
       <div>
         <h4 style="font-size:0.9rem; color:#fff; margin-bottom:0.5rem; display:flex; justify-content:space-between;">
           <span>1. 受信した提案 (Pre-Prepare Payload)</span>
@@ -422,7 +427,6 @@ export class UIController {
         `}
       </div>
 
-      <!-- 2. Received Prepare Votes History -->
       <div>
         <h4 style="font-size:0.9rem; color:#fff; margin-bottom:0.5rem; display:flex; justify-content:space-between; align-items:center;">
           <span>2. 受信した Prepare 投票の内訳 & 検証履歴</span>
@@ -463,7 +467,6 @@ export class UIController {
         </div>
       </div>
 
-      <!-- 3. Received Commit Votes History -->
       <div>
         <h4 style="font-size:0.9rem; color:#fff; margin-bottom:0.5rem; display:flex; justify-content:space-between; align-items:center;">
           <span>3. 受信した Commit 投票の内訳 & 確定状態</span>
@@ -543,7 +546,6 @@ export class UIController {
 
     tbody.innerHTML = html;
 
-    // Allow clicking matrix row to open Inspector popup too!
     tbody.querySelectorAll('.matrix-row-clickable').forEach(row => {
       row.addEventListener('click', () => {
         const nodeId = parseInt(row.getAttribute('data-node'), 10);
