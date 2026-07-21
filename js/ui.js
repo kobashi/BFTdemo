@@ -68,7 +68,7 @@ export class UIController {
 
     document.getElementById('btnReset')?.addEventListener('click', () => {
       this.pause();
-      this.engine.reset();
+      this.engine.reset(true);
     });
 
     document.getElementById('btnStep')?.addEventListener('click', () => {
@@ -113,6 +113,8 @@ export class UIController {
     Object.keys(presets).forEach(id => {
       const btn = document.getElementById(id);
       btn?.addEventListener('click', () => {
+        this.pause();
+
         document.querySelectorAll('.btn-preset').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
 
@@ -121,15 +123,19 @@ export class UIController {
         if (sliderN) sliderN.value = p.N;
         document.getElementById('valNodes').textContent = p.N;
 
-        this.engine.setTotalNodes(p.N);
-        this.engine.setLeaderId(p.leader);
-        this.updateLeaderSelectOptions();
+        this.engine.totalNodes = p.N;
+        this.engine.leaderId = p.leader;
 
+        // Reset all nodes to default honest first (false = clear previous behaviors)
+        this.engine.reset(false);
+
+        // Apply preset specific node behaviors
         for (let nodeId in p.behaviors) {
           this.engine.setNodeBehavior(parseInt(nodeId, 10), p.behaviors[nodeId]);
         }
 
-        this.engine.reset();
+        this.updateLeaderSelectOptions();
+        this.updateUI();
       });
     });
   }
@@ -150,7 +156,7 @@ export class UIController {
 
   play() {
     if (this.engine.currentPhase === 'COMPLETED' || this.engine.currentPhase === 'FAILED') {
-      this.engine.reset();
+      this.engine.reset(true);
     }
 
     this.isPlaying = true;
@@ -260,9 +266,6 @@ export class UIController {
     });
   }
 
-  /**
-   * Render the Dedicated Traitor Vote Exclusion & Tally Inspector
-   */
   renderExclusionInspector() {
     const container = document.getElementById('exclusionInspector');
     if (!container) return;
