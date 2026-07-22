@@ -21,7 +21,7 @@ export class UIController {
 
     this.isPlaying = false;
     this.playInterval = null;
-    this.playSpeed = 1000;
+    this.playSpeed = 5150;
     this.activeModalNodeId = null;
 
     this.initNavigation();
@@ -90,8 +90,11 @@ export class UIController {
     const speedSlider = document.getElementById('sliderSpeed');
     const syncSpeed = (sliderVal) => {
       const val = parseInt(sliderVal, 10);
-      // slider min 100 (slowest = 2050ms), max 2000 (fastest = 150ms)
-      this.playSpeed = Math.max(150, 2150 - val);
+      // slider 1 (slowest = 8500ms), slider 100 (fastest = 1800ms)
+      this.playSpeed = Math.round(8500 - (val - 1) * 67.67);
+      const sec = (this.playSpeed / 1000).toFixed(1);
+      const label = document.getElementById('valSpeedText');
+      if (label) label.textContent = `${sec}秒/step`;
       this.renderer.setSpeed(this.playSpeed);
     };
 

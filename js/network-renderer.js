@@ -17,7 +17,7 @@ export class NetworkRenderer {
     this.activeParticles = [];
     this.rejectionBadges = [];
     this.hoveredNodeId = null;
-    this.particleSpeed = 0.018; // Dynamic speed scaled with UI slider
+    this.particleSpeed = 0.005; // Slow motion default
     
     this.animId = null;
     this.resizeCanvas();
@@ -33,10 +33,10 @@ export class NetworkRenderer {
   }
 
   setSpeed(stepMs) {
-    // Scale particle traversal speed according to step delay in ms
-    // Target completion: ~65% of stepMs duration
-    const framesPerStep = Math.max(8, stepMs / 16.6);
-    this.particleSpeed = Math.min(0.12, Math.max(0.005, 1.0 / (framesPerStep * 0.65)));
+    // Scale particle traversal speed for super slow-motion visualization.
+    // Target completion: ~70% of stepMs duration
+    const framesPerStep = Math.max(20, stepMs / 16.6);
+    this.particleSpeed = Math.min(0.05, Math.max(0.0015, 1.0 / (framesPerStep * 0.7)));
   }
 
   initCanvasInteractivity() {
@@ -108,7 +108,7 @@ export class NetworkRenderer {
           start: { ...startPos },
           end: { ...endPos },
           progress: 0,
-          speed: this.particleSpeed || 0.018,
+          speed: this.particleSpeed || 0.005,
           type: msg.type,
           label: msg.payload?.digest || msg.type
         });
