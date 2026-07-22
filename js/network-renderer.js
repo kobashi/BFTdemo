@@ -2,6 +2,7 @@
  * Network Canvas Visualizer for BFT Simulation
  * Renders nodes, topology links, phase states, glowing pulses, and message particles,
  * with explicit visual distinction for ⚔️ ATTACK (Valid) vs 🛡️ RETREAT (Traitor) packets.
+ * Supports mid-flight particle pausing and resuming.
  */
 
 export class NetworkRenderer {
@@ -17,6 +18,7 @@ export class NetworkRenderer {
     this.rejectionBadges = [];
     this.hoveredNodeId = null;
     this.particleSpeed = 0.005; // Slow motion default
+    this.isPaused = false;
     
     this.animId = null;
     this.resizeCanvas();
@@ -29,6 +31,10 @@ export class NetworkRenderer {
     });
 
     this.startAnimationLoop();
+  }
+
+  setPaused(paused) {
+    this.isPaused = paused;
   }
 
   setSpeed(stepMs) {
@@ -308,7 +314,11 @@ export class NetworkRenderer {
   drawParticles() {
     for (let i = this.activeParticles.length - 1; i >= 0; i--) {
       const p = this.activeParticles[i];
-      p.progress += p.speed;
+      
+      // Advance particle position ONLY if NOT paused
+      if (!this.isPaused) {
+        p.progress += p.speed;
+      }
 
       if (p.progress >= 1) {
         this.activeParticles.splice(i, 1);
@@ -324,7 +334,6 @@ export class NetworkRenderer {
 
       this.ctx.save();
 
-      // If traitor packet, draw warning pulse ring around moving particle
       if (isTraitor) {
         this.ctx.beginPath();
         this.ctx.arc(currentX, currentY, 12, 0, Math.PI * 2);
@@ -334,7 +343,6 @@ export class NetworkRenderer {
         this.ctx.stroke();
       }
 
-      // Draw particle core
       this.ctx.beginPath();
       this.ctx.arc(currentX, currentY, 7, 0, Math.PI * 2);
       this.ctx.fillStyle = color;
@@ -342,7 +350,6 @@ export class NetworkRenderer {
       this.ctx.shadowBlur = 12;
       this.ctx.fill();
 
-      // Particle floating label
       this.ctx.font = 'bold 9px Inter, sans-serif';
       this.ctx.fillStyle = isTraitor ? '#fca5a5' : '#ffffff';
       this.ctx.fillText(labelText, currentX + 10, currentY - 8);
@@ -354,8 +361,11 @@ export class NetworkRenderer {
   drawRejectionBadges() {
     for (let i = this.rejectionBadges.length - 1; i >= 0; i--) {
       const b = this.rejectionBadges[i];
-      b.y -= 0.3;
-      b.opacity -= 0.008;
+      
+      if (!this.isPaused) {
+        b.y -= 0.3;
+        b.opacity -= 0.008;
+      }
 
       if (b.opacity <= 0) {
         this.rejectionBadges.splice(i, 1);

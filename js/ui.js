@@ -83,6 +83,7 @@ export class UIController {
 
     document.getElementById('btnStop')?.addEventListener('click', () => {
       this.pause();
+      this.renderer.setPaused(false);
       this.engine.reset(true);
     });
 
@@ -91,7 +92,7 @@ export class UIController {
       this.engine.stepNext();
     });
 
-    // Speed Slider Handler - Syncs both playback step interval and canvas particle travel speed
+    // Speed Slider Handler
     const speedSlider = document.getElementById('sliderSpeed');
     const syncSpeed = (sliderVal) => {
       const val = parseInt(sliderVal, 10);
@@ -199,6 +200,8 @@ export class UIController {
     }
 
     this.isPlaying = true;
+    this.renderer.setPaused(false);
+
     const btnPlay = document.getElementById('btnPlay');
     const btnPause = document.getElementById('btnPause');
     if (btnPlay) btnPlay.classList.add('primary');
@@ -216,6 +219,8 @@ export class UIController {
 
   pause() {
     this.isPlaying = false;
+    this.renderer.setPaused(true);
+
     if (this.playInterval) {
       clearInterval(this.playInterval);
       this.playInterval = null;
