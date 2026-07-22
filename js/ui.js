@@ -22,9 +22,11 @@ export class UIController {
 
     this.isPlaying = false;
     this.playTimeout = null;
-    // Fixed cadence between auto-play steps (ms). Intentionally independent of
-    // the speed slider, which only affects particle travel speed.
-    this.stepInterval = 1200;
+    // Small pause (ms) inserted after a step's particles have finished
+    // travelling, before the next step fires. The actual step interval is
+    // derived from the current particle travel time (see getStepInterval)
+    // so that consecutive steps never overlap.
+    this.stepGap = 200;
     this.activeModalNodeId = null;
 
     this.initNavigation();
@@ -207,6 +209,15 @@ export class UIController {
     }
   }
 
+  // Interval before the next auto-play step. Derived from the current particle
+  // travel time so a step waits until its particles have arrived, preventing
+  // particles from overlapping between steps. Recomputed each step so slider
+  // changes take effect immediately.
+  getStepInterval() {
+    const travelMs = this.renderer.getParticleTravelSeconds() * 1000;
+    return travelMs + this.stepGap;
+  }
+
   play() {
     // Restart cleanly if the previous run has already terminated.
     if (this.engine.currentPhase === 'COMPLETED' || this.engine.currentPhase === 'FAILED') {
@@ -231,7 +242,7 @@ export class UIController {
       this.engine.stepNext();
 
       if (this.engine.currentPhase !== 'COMPLETED' && this.engine.currentPhase !== 'FAILED') {
-        this.playTimeout = setTimeout(runAutoStep, this.stepInterval);
+        this.playTimeout = setTimeout(runAutoStep, this.getStepInterval());
       } else {
         // Reached the end: stop advancing but let the final particles finish
         // travelling (do NOT freeze the renderer here).
