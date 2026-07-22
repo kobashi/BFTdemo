@@ -17,7 +17,7 @@ export class NetworkRenderer {
     this.activeParticles = [];
     this.rejectionBadges = [];
     this.hoveredNodeId = null;
-    this.particleSpeed = 0.005; // Slow motion default
+    this.particleSpeed = 0.005;
     this.isPaused = false;
     
     this.animId = null;
@@ -38,8 +38,9 @@ export class NetworkRenderer {
   }
 
   setSpeed(stepMs) {
-    const framesPerStep = Math.max(20, stepMs / 16.6);
-    this.particleSpeed = Math.min(0.05, Math.max(0.0015, 1.0 / (framesPerStep * 0.7)));
+    // Scale particle travel so movement begins immediately and completes in ~75% of stepMs
+    const framesPerStep = Math.max(15, stepMs / 16.6);
+    this.particleSpeed = Math.min(0.06, Math.max(0.002, 1.0 / (framesPerStep * 0.75)));
   }
 
   initCanvasInteractivity() {
@@ -315,7 +316,6 @@ export class NetworkRenderer {
     for (let i = this.activeParticles.length - 1; i >= 0; i--) {
       const p = this.activeParticles[i];
       
-      // Advance particle position ONLY if NOT paused
       if (!this.isPaused) {
         p.progress += p.speed;
       }

@@ -21,7 +21,7 @@ export class UIController {
     this.theory = new TheoryController();
 
     this.isPlaying = false;
-    this.playInterval = null;
+    this.playTimeout = null;
     this.playSpeed = 5150;
     this.activeModalNodeId = null;
 
@@ -105,10 +105,6 @@ export class UIController {
       syncSpeed(speedSlider.value);
       speedSlider.addEventListener('input', (e) => {
         syncSpeed(e.target.value);
-        if (this.isPlaying) {
-          this.pause();
-          this.play();
-        }
       });
     }
   }
@@ -217,23 +213,36 @@ export class UIController {
       btn.classList.add('primary');
     }
 
-    if (this.playInterval) clearInterval(this.playInterval);
-    this.playInterval = setInterval(() => {
+    if (this.playTimeout) clearTimeout(this.playTimeout);
+
+    const runAutoStep = () => {
+      if (!this.isPlaying) return;
+
       if (this.engine.currentPhase === 'COMPLETED' || this.engine.currentPhase === 'FAILED') {
         this.pause();
-      } else {
-        this.engine.stepNext();
+        return;
       }
-    }, this.playSpeed);
+
+      this.engine.stepNext();
+
+      if (this.engine.currentPhase !== 'COMPLETED' && this.engine.currentPhase !== 'FAILED') {
+        this.playTimeout = setTimeout(runAutoStep, this.playSpeed);
+      } else {
+        this.pause();
+      }
+    };
+
+    // Execute step 1 IMMEDIATELY on play button press (0ms initial wait delay)
+    runAutoStep();
   }
 
   pause() {
     this.isPlaying = false;
     this.renderer.setPaused(true);
 
-    if (this.playInterval) {
-      clearInterval(this.playInterval);
-      this.playInterval = null;
+    if (this.playTimeout) {
+      clearTimeout(this.playTimeout);
+      this.playTimeout = null;
     }
 
     const btn = document.getElementById('btnPlayPause');
