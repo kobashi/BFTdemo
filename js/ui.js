@@ -80,13 +80,18 @@ export class UIController {
     });
 
     document.getElementById('btnStop')?.addEventListener('click', () => {
-      this.pause();
+      // Stop & Reset: return to the very beginning and stay stopped.
+      this.stopAutoPlay();
       this.renderer.setPaused(false);
+      this.renderer.clearParticles();
       this.engine.reset(true);
     });
 
     document.getElementById('btnStep')?.addEventListener('click', () => {
-      this.pause();
+      // Single step: stop auto-play but keep the renderer running so THIS
+      // step's message particles animate (再生凍結させない).
+      this.stopAutoPlay();
+      this.renderer.setPaused(false);
       this.engine.stepNext();
     });
 
@@ -156,7 +161,9 @@ export class UIController {
     Object.keys(presets).forEach(id => {
       const btn = document.getElementById(id);
       btn?.addEventListener('click', () => {
-        this.pause();
+        this.stopAutoPlay();
+        this.renderer.setPaused(false);
+        this.renderer.clearParticles();
 
         document.querySelectorAll('.btn-preset').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
@@ -199,19 +206,15 @@ export class UIController {
   }
 
   play() {
+    // Restart cleanly if the previous run has already terminated.
     if (this.engine.currentPhase === 'COMPLETED' || this.engine.currentPhase === 'FAILED') {
+      this.renderer.clearParticles();
       this.engine.reset(true);
     }
 
     this.isPlaying = true;
     this.renderer.setPaused(false);
-
-    const btn = document.getElementById('btnPlayPause');
-    if (btn) {
-      btn.innerHTML = '⏸';
-      btn.title = '一時停止 (Pause)';
-      btn.classList.add('primary');
-    }
+    this.setPlayButtonState(true);
 
     if (this.playTimeout) clearTimeout(this.playTimeout);
 
@@ -219,7 +222,7 @@ export class UIController {
       if (!this.isPlaying) return;
 
       if (this.engine.currentPhase === 'COMPLETED' || this.engine.currentPhase === 'FAILED') {
-        this.pause();
+        this.stopAutoPlay();
         return;
       }
 
@@ -228,7 +231,9 @@ export class UIController {
       if (this.engine.currentPhase !== 'COMPLETED' && this.engine.currentPhase !== 'FAILED') {
         this.playTimeout = setTimeout(runAutoStep, this.playSpeed);
       } else {
-        this.pause();
+        // Reached the end: stop advancing but let the final particles finish
+        // travelling (do NOT freeze the renderer here).
+        this.stopAutoPlay();
       }
     };
 
@@ -236,17 +241,36 @@ export class UIController {
     runAutoStep();
   }
 
+  // Manual pause (toggle): stop auto-advancing AND freeze mid-flight particles
+  // so they resume smoothly when Play is pressed again.
   pause() {
-    this.isPlaying = false;
+    this.stopAutoPlay();
     this.renderer.setPaused(true);
+  }
+
+  // Stop the auto-play timer and reset the toggle button to ▶, WITHOUT freezing
+  // the renderer. Shared by Step, Stop, presets and end-of-run so that those
+  // paths keep animating their particles.
+  stopAutoPlay() {
+    this.isPlaying = false;
 
     if (this.playTimeout) {
       clearTimeout(this.playTimeout);
       this.playTimeout = null;
     }
 
+    this.setPlayButtonState(false);
+  }
+
+  setPlayButtonState(playing) {
     const btn = document.getElementById('btnPlayPause');
-    if (btn) {
+    if (!btn) return;
+
+    if (playing) {
+      btn.innerHTML = '⏸';
+      btn.title = '一時停止 (Pause)';
+      btn.classList.add('primary');
+    } else {
       btn.innerHTML = '▶';
       btn.title = '再生 (Play)';
       btn.classList.remove('primary');

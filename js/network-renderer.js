@@ -37,6 +37,11 @@ export class NetworkRenderer {
     this.isPaused = paused;
   }
 
+  clearParticles() {
+    this.activeParticles = [];
+    this.rejectionBadges = [];
+  }
+
   setSpeed(stepMs) {
     // Scale particle travel so movement begins immediately and completes in ~75% of stepMs
     const framesPerStep = Math.max(15, stepMs / 16.6);
