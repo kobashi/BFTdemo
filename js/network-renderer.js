@@ -1,8 +1,7 @@
 /**
  * Network Canvas Visualizer for BFT Simulation
  * Renders nodes, topology links, phase states, glowing pulses, and message particles,
- * plus explicit visual indicators for traitor message rejection / filtering and
- * interactive node click detection for details inspection modal.
+ * with explicit visual distinction for ⚔️ ATTACK (Valid) vs 🛡️ RETREAT (Traitor) packets.
  */
 
 export class NetworkRenderer {
@@ -33,8 +32,6 @@ export class NetworkRenderer {
   }
 
   setSpeed(stepMs) {
-    // Scale particle traversal speed for super slow-motion visualization.
-    // Target completion: ~70% of stepMs duration
     const framesPerStep = Math.max(20, stepMs / 16.6);
     this.particleSpeed = Math.min(0.05, Math.max(0.0015, 1.0 / (framesPerStep * 0.7)));
   }
@@ -104,13 +101,15 @@ export class NetworkRenderer {
       const endPos = msg.to === 'CLIENT' ? this.clientPosition : this.nodePositions.get(msg.to);
 
       if (startPos && endPos) {
+        const intent = msg.payload?.intent || (msg.payload?.digest?.includes('RETREAT') ? 'RETREAT' : 'ATTACK');
         this.activeParticles.push({
           start: { ...startPos },
           end: { ...endPos },
           progress: 0,
           speed: this.particleSpeed || 0.005,
           type: msg.type,
-          label: msg.payload?.digest || msg.type
+          intent: intent,
+          label: intent === 'RETREAT' ? '🛡️ 撤退 (RETREAT)' : '⚔️ 攻撃 (ATTACK)'
         });
       }
     }
@@ -123,20 +122,9 @@ export class NetworkRenderer {
           x: pos.x,
           y: pos.y - 35,
           opacity: 1.0,
-          label: `🚫 REJECTED Traitor Vote (N${rej.fromNodeId})`
+          label: `🚫 撤退/偽票を破棄 (From N${rej.fromNodeId})`
         });
       }
-    }
-  }
-
-  getPhaseColor(type) {
-    switch (type) {
-      case 'REQUEST': return '#6366f1';
-      case 'PREPREPARE': return '#a855f7';
-      case 'PREPARE': return '#3b82f6';
-      case 'COMMIT': return '#10b981';
-      case 'REPLY': return '#f59e0b';
-      default: return '#94a3b8';
     }
   }
 
@@ -329,19 +317,35 @@ export class NetworkRenderer {
 
       const currentX = p.start.x + (p.end.x - p.start.x) * p.progress;
       const currentY = p.start.y + (p.end.y - p.start.y) * p.progress;
-      const color = this.getPhaseColor(p.type);
+
+      const isTraitor = (p.intent === 'RETREAT');
+      const color = isTraitor ? '#f43f5e' : (p.type === 'REQUEST' ? '#6366f1' : '#10b981');
+      const labelText = isTraitor ? '🛡️ 撤退 (RETREAT)' : `⚔️ 攻撃 (${p.type})`;
 
       this.ctx.save();
+
+      // If traitor packet, draw warning pulse ring around moving particle
+      if (isTraitor) {
+        this.ctx.beginPath();
+        this.ctx.arc(currentX, currentY, 12, 0, Math.PI * 2);
+        this.ctx.strokeStyle = 'rgba(244, 63, 94, 0.6)';
+        this.ctx.lineWidth = 1.5;
+        this.ctx.setLineDash([2, 2]);
+        this.ctx.stroke();
+      }
+
+      // Draw particle core
       this.ctx.beginPath();
-      this.ctx.arc(currentX, currentY, 6, 0, Math.PI * 2);
+      this.ctx.arc(currentX, currentY, 7, 0, Math.PI * 2);
       this.ctx.fillStyle = color;
       this.ctx.shadowColor = color;
-      this.ctx.shadowBlur = 10;
+      this.ctx.shadowBlur = 12;
       this.ctx.fill();
 
-      this.ctx.font = 'bold 9px JetBrains Mono, monospace';
-      this.ctx.fillStyle = '#ffffff';
-      this.ctx.fillText(p.type, currentX + 8, currentY - 8);
+      // Particle floating label
+      this.ctx.font = 'bold 9px Inter, sans-serif';
+      this.ctx.fillStyle = isTraitor ? '#fca5a5' : '#ffffff';
+      this.ctx.fillText(labelText, currentX + 10, currentY - 8);
 
       this.ctx.restore();
     }

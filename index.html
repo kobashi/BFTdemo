@@ -52,8 +52,8 @@
           <div class="control-group">
             <label class="control-label">プリセットシナリオ (Presets):</label>
             <div class="preset-grid">
-              <button id="presetStandard" class="btn-preset active">標準合意<br>(N=4, F=1 裏切り排除)</button>
-              <button id="presetBreakdown" class="btn-preset">合意崩壊<br>(N=4, F=2 多数派乗っ取り)</button>
+              <button id="presetStandard" class="btn-preset active">標準合意<br>(N=4, F=1 攻撃合意)</button>
+              <button id="presetBreakdown" class="btn-preset">合意崩壊<br>(N=4, F=2 乗っ取り)</button>
               <button id="presetTraitorLeader" class="btn-preset">裏切りリーダー<br>(Leader 偽提案)</button>
               <button id="presetSilentNode" class="btn-preset">沈黙ノード<br>(Node 応答なし)</button>
             </div>
@@ -100,16 +100,18 @@
               <div class="legend-item"><span class="node-dot leader"></span> リーダー (Primary)</div>
               <div class="legend-item"><span class="node-dot honest"></span> 正常ノード (Honest)</div>
               <div class="legend-item"><span class="node-dot byzantine"></span> 障害ノード (Byzantine)</div>
-              <div class="legend-item" style="color:var(--accent-primary); cursor:default;">💡 ノードをクリックすると投票詳細Popupを表示</div>
+              <div class="legend-item"><span style="color:#10b981; font-weight:600;">⚔️ 攻撃 (ATTACK/正当)</span></div>
+              <div class="legend-item"><span style="color:#f43f5e; font-weight:600;">🛡️ 撤退 (RETREAT/偽票)</span></div>
             </div>
           </div>
 
           <!-- Playback Controls Bar -->
           <div class="playback-bar">
             <div class="btn-group">
-              <button id="btnReset" class="btn-icon" title="Reset Simulation">↺</button>
-              <button id="btnPlay" class="btn-icon primary" title="Play / Pause">▶</button>
-              <button id="btnStep" class="btn-icon" title="Step Next">❯</button>
+              <button id="btnPlay" class="btn-icon primary" title="再生 (Play)">▶</button>
+              <button id="btnPause" class="btn-icon" title="一時停止 (Pause)">⏸</button>
+              <button id="btnStop" class="btn-icon" title="停止・リセット (Stop & Reset)">⏹</button>
+              <button id="btnStep" class="btn-icon" title="1ステップ進む (Step Forward)">❯</button>
             </div>
 
             <div class="phase-stepper">
@@ -186,7 +188,7 @@
         <div class="theory-card">
           <h3>📘 ビザンチン合意形成と裏切り者排除の仕組み</h3>
           <p>
-            <b>ビザンチン障害（Byzantine Fault）</b>とは、意図的に偽のメッセージや異なる投票（分裂投票）を送信してシステムを混乱させようとするノードが含まれる障害です。
+            <b>ビザンチン障害（Byzantine Fault）</b>とは、意図的に偽のメッセージや異なる投票（「⚔️ 攻撃」vs「🛡️ 撤退」の分裂投票）を送信してシステムを混乱させようとするノードが含まれる障害です。
           </p>
           
           <div class="formula-box">
@@ -195,7 +197,7 @@
 
           <p style="font-size:0.85rem; color:var(--text-muted);">
             <b>裏切り者が排除される仕組み：</b><br>
-            正常なノード群は、受け取ったメッセージのうち正当な署名とダイジェストを持つものだけを集計します。集まった票数がクオラム閾値 <code>2f + 1</code> に達しない偽の提案（裏切りノードの意見）は<b>「無効（REJECTED）」</b>として即座に破棄されます。裏切り者が $f$ 台以下であれば、正常ノードの票数のみで必ず $2f + 1$ の合意が成立します。
+            正常なノード群は、受け取ったメッセージのうち正当な署名とダイジェストを持つものだけを集計します。集まった票数がクオラム閾値 <code>2f + 1</code> に達しない偽の提案（裏切りノードの「🛡️ 撤退」意見）は<b>「無効（REJECTED）」</b>として即座に破棄されます。裏切り者が $f$ 台以下であれば、正常ノードの「⚔️ 攻撃」票のみで必ず $2f + 1$ の合意が成立します。
           </p>
 
           <h4 style="color:#fff; margin-top:1.5rem; margin-bottom:0.75rem;">PBFTの3フェーズ手順</h4>
@@ -204,21 +206,21 @@
               <div class="step-num">1</div>
               <div class="step-info">
                 <h4>Pre-Prepare フェーズ</h4>
-                <p>リーダー（Primary）がトランザクション提案を全ノードへ送信します。</p>
+                <p>リーダー（Primary）が「⚔️ 攻撃」の提案を全ノードへ送信します。</p>
               </div>
             </div>
             <div class="step-item">
               <div class="step-num">2</div>
               <div class="step-info">
                 <h4>Prepare フェーズ (裏切り者の検証 & 排除)</h4>
-                <p>全ノード間でお互いに投票（Prepareメッセージ）を送信。正常ノードは不正なメッセージを破棄し、2f + 1 個の整合メッセージが集まった提案のみを承認（PREPARED）します。</p>
+                <p>全ノード間でお互いに投票（Prepareメッセージ）を送信。正常ノードは裏切り者の「🛡️ 撤退」票を破棄し、2f + 1 個の整合「⚔️ 攻撃」メッセージが集まった提案のみを承認（PREPARED）します。</p>
               </div>
             </div>
             <div class="step-item">
               <div class="step-num">3</div>
               <div class="step-info">
                 <h4>Commit フェーズ</h4>
-                <p>全ノード間でCommitメッセージを交わし、2f + 1 票に達した正常提案を最終確定（COMMITTED）してクライアントに実行結果を返信します。</p>
+                <p>全ノード間でCommitメッセージを交わし、2f + 1 票に達した「⚔️ 攻撃」提案を最終確定（COMMITTED）してクライアントに実行結果を返信します。</p>
               </div>
             </div>
           </div>

@@ -72,7 +72,16 @@ export class UIController {
       this.engine.setLeaderId(id);
     });
 
-    document.getElementById('btnReset')?.addEventListener('click', () => {
+    // Playback Buttons: Play, Pause, Stop, Step
+    document.getElementById('btnPlay')?.addEventListener('click', () => {
+      this.play();
+    });
+
+    document.getElementById('btnPause')?.addEventListener('click', () => {
+      this.pause();
+    });
+
+    document.getElementById('btnStop')?.addEventListener('click', () => {
       this.pause();
       this.engine.reset(true);
     });
@@ -82,15 +91,10 @@ export class UIController {
       this.engine.stepNext();
     });
 
-    document.getElementById('btnPlay')?.addEventListener('click', () => {
-      this.togglePlay();
-    });
-
     // Speed Slider Handler - Syncs both playback step interval and canvas particle travel speed
     const speedSlider = document.getElementById('sliderSpeed');
     const syncSpeed = (sliderVal) => {
       const val = parseInt(sliderVal, 10);
-      // slider 1 (slowest = 8500ms), slider 100 (fastest = 1800ms)
       this.playSpeed = Math.round(8500 - (val - 1) * 67.67);
       const sec = (this.playSpeed / 1000).toFixed(1);
       const label = document.getElementById('valSpeedText');
@@ -189,14 +193,6 @@ export class UIController {
     });
   }
 
-  togglePlay() {
-    if (this.isPlaying) {
-      this.pause();
-    } else {
-      this.play();
-    }
-  }
-
   play() {
     if (this.engine.currentPhase === 'COMPLETED' || this.engine.currentPhase === 'FAILED') {
       this.engine.reset(true);
@@ -204,8 +200,11 @@ export class UIController {
 
     this.isPlaying = true;
     const btnPlay = document.getElementById('btnPlay');
-    if (btnPlay) btnPlay.innerHTML = '⏸';
+    const btnPause = document.getElementById('btnPause');
+    if (btnPlay) btnPlay.classList.add('primary');
+    if (btnPause) btnPause.classList.remove('primary');
 
+    if (this.playInterval) clearInterval(this.playInterval);
     this.playInterval = setInterval(() => {
       if (this.engine.currentPhase === 'COMPLETED' || this.engine.currentPhase === 'FAILED') {
         this.pause();
@@ -222,7 +221,9 @@ export class UIController {
       this.playInterval = null;
     }
     const btnPlay = document.getElementById('btnPlay');
-    if (btnPlay) btnPlay.innerHTML = '▶';
+    const btnPause = document.getElementById('btnPause');
+    if (btnPlay) btnPlay.classList.remove('primary');
+    if (btnPause) btnPause.classList.add('primary');
   }
 
   updateUI() {
@@ -338,14 +339,14 @@ export class UIController {
 
         const border = isValid ? (isQuorumPassed ? 'rgba(16, 185, 129, 0.4)' : 'rgba(255,255,255,0.1)') : 'rgba(244, 63, 94, 0.4)';
         const bg = isValid ? (isQuorumPassed ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.02)') : 'rgba(244, 63, 94, 0.1)';
-        const badgeText = isValid ? (isQuorumPassed ? '✅ クオラム達成 (合意成立)' : '⏳ 票数不足') : '🚫 自動排除 (Traitor Excluded)';
+        const badgeText = isValid ? (isQuorumPassed ? '✅ クオラム達成 (攻撃合意成立)' : '⏳ 票数不足') : '🚫 自動排除 (Traitor Excluded)';
         const badgeColor = isValid ? (isQuorumPassed ? '#34d399' : '#94a3b8') : '#f87171';
 
         html += `
           <div style="background:${bg}; border:1px solid ${border}; border-radius:var(--radius-md); padding:0.85rem;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.4rem;">
               <span style="font-family:var(--font-code); font-size:0.8rem; font-weight:700; color:${isValid ? '#60a5fa' : '#f43f5e'};">
-                ${digest}
+                ${isValid ? '⚔️ 攻撃提案 (d_ATTACK)' : '🛡️ 撤退/偽提案 (d_RETREAT)'}
               </span>
               <span style="font-size:0.75rem; font-weight:700; color:${badgeColor}; padding:2px 6px; border-radius:4px; background:rgba(0,0,0,0.3);">
                 ${badgeText}
@@ -356,8 +357,8 @@ export class UIController {
             </div>
             <div style="font-size:0.75rem; color:var(--text-muted);">
               ${isValid 
-                ? '正当なトランザクション提案。正常ノード群の支持により採用。' 
-                : '裏切りノードによる改ざん投票。2f+1の賛成票に達しないため破棄されました。'}
+                ? '正当な「⚔️ 攻撃」提案。正常ノード群の支持により採用。' 
+                : '裏切りノードによる改ざん「🛡️ 撤退」投票。2f+1の賛成票に達しないため破棄されました。'}
             </div>
           </div>
         `;
@@ -406,7 +407,7 @@ export class UIController {
           <div style="font-size:1.1rem; font-weight:700; color:#fff; font-family:var(--font-code);">${node.state}</div>
         </div>
         <div style="text-align:right;">
-          <div style="font-size:0.8rem; color:var(--text-muted);">無効票の拒否件数</div>
+          <div style="font-size:0.8rem; color:var(--text-muted);">無効/撤退票の拒否件数</div>
           <div style="font-size:1.1rem; font-weight:700; color:${node.rejectedCount > 0 ? '#f43f5e' : '#34d399'}; font-family:var(--font-code);">
             ${node.rejectedCount} 件 拒否/破棄
           </div>
@@ -420,7 +421,7 @@ export class UIController {
         </h4>
         ${node.preprepareReceived ? `
           <div style="background:rgba(168, 85, 247, 0.1); border:1px solid rgba(168, 85, 247, 0.3); padding:0.75rem; border-radius:var(--radius-md); font-family:var(--font-code); font-size:0.825rem;">
-            <div><b>Transaction:</b> "${node.preprepareReceived.val}"</div>
+            <div><b>提案内容:</b> "${node.preprepareReceived.val}"</div>
             <div><b>Digest:</b> <span style="color:#c084fc;">${node.preprepareReceived.digest}</span></div>
           </div>
         ` : `
@@ -451,8 +452,8 @@ export class UIController {
       node.receivedPrepares.forEach(prep => {
         const rowClass = prep.isValid ? 'valid' : 'invalid';
         const badge = prep.isValid 
-          ? '<span style="color:#34d399; font-weight:600;">✅ 有効票 (VALID VOTE)</span>' 
-          : '<span style="color:#f43f5e; font-weight:600;">🚫 無効/裏切り票 (REJECTED)</span>';
+          ? '<span style="color:#34d399; font-weight:600;">⚔️ 有効「攻撃」票 (VALID)</span>' 
+          : '<span style="color:#f43f5e; font-weight:600;">🛡️ 破棄「撤退」票 (REJECTED)</span>';
 
         html += `
           <div class="vote-item-row ${rowClass}">
@@ -491,8 +492,8 @@ export class UIController {
       node.receivedCommits.forEach(comm => {
         const rowClass = comm.isValid ? 'valid' : 'invalid';
         const badge = comm.isValid 
-          ? '<span style="color:#34d399; font-weight:600;">✅ Commit 承認</span>' 
-          : '<span style="color:#f43f5e; font-weight:600;">🚫 Commit 否決</span>';
+          ? '<span style="color:#34d399; font-weight:600;">⚔️ Commit 承認 (ATTACK)</span>' 
+          : '<span style="color:#f43f5e; font-weight:600;">🛡️ Commit 否決 (RETREAT)</span>';
 
         html += `
           <div class="vote-item-row ${rowClass}">

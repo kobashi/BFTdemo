@@ -1,6 +1,7 @@
 /**
  * Practical Byzantine Fault Tolerance (PBFT) Simulation Engine
  * Manages consensus state, rounds, node behaviors, vote tallies, and explicit rejection tracking.
+ * Framing: Byzantine Generals Problem (⚔️ ATTACK vs 🛡️ RETREAT/FORGED).
  */
 
 export class BFTEngine {
@@ -11,7 +12,7 @@ export class BFTEngine {
     this.currentPhase = 'REQUEST'; // REQUEST, PREPREPARE, PREPARE, COMMIT, REPLY, COMPLETED, FAILED
     this.currentView = 0;
     this.sequenceNumber = 1;
-    this.validPayload = { val: "TRANSFER $100 -> ALICE", digest: "d_VALID_0x8F3" };
+    this.validPayload = { val: "⚔️ 攻撃 (ATTACK)", digest: "d_ATTACK_0x8F3", intent: "ATTACK" };
     
     this.inFlightMessages = [];
     this.rejectedMessages = [];
@@ -136,7 +137,7 @@ export class BFTEngine {
   }
 
   executeRequestPhase() {
-    this.addLog('system', `Client submits transaction request: "${this.validPayload.val}" to Primary Node ${this.leaderId}`);
+    this.addLog('system', `Client submits proposal request: "${this.validPayload.val}" to Primary Node ${this.leaderId}`);
     
     this.inFlightMessages.push({
       from: 'CLIENT',
@@ -171,12 +172,14 @@ export class BFTEngine {
       let payload = { ...this.validPayload };
       
       if (leader.behavior === 'corrupt') {
-        payload.val = "FORGED $9999 -> HACKER";
-        payload.digest = "d_FORGED_BYZ";
+        payload.val = "🛡️ 撤退 (RETREAT)";
+        payload.digest = "d_RETREAT_BYZ";
+        payload.intent = "RETREAT";
       } else if (leader.behavior === 'lie_split') {
         if (target.id % 2 === 1) {
-          payload.val = "FORGED $9999 -> HACKER";
-          payload.digest = "d_FORGED_BYZ";
+          payload.val = "🛡️ 撤退 (RETREAT)";
+          payload.digest = "d_RETREAT_BYZ";
+          payload.intent = "RETREAT";
         }
       }
 
@@ -202,9 +205,9 @@ export class BFTEngine {
       
       let receivedVal = { ...this.validPayload };
       if (this.nodes[this.leaderId].behavior === 'lie_split' && node.id % 2 === 1) {
-        receivedVal = { val: "FORGED $9999 -> HACKER", digest: "d_FORGED_BYZ" };
+        receivedVal = { val: "🛡️ 撤退 (RETREAT)", digest: "d_RETREAT_BYZ", intent: "RETREAT" };
       } else if (this.nodes[this.leaderId].behavior === 'corrupt') {
-        receivedVal = { val: "FORGED $9999 -> HACKER", digest: "d_FORGED_BYZ" };
+        receivedVal = { val: "🛡️ 撤退 (RETREAT)", digest: "d_RETREAT_BYZ", intent: "RETREAT" };
       }
 
       node.preprepareReceived = receivedVal;
@@ -221,15 +224,21 @@ export class BFTEngine {
         if (target.id === sender.id) continue;
 
         let digest = sender.preprepareReceived ? sender.preprepareReceived.digest : this.validPayload.digest;
-        
-        if (sender.behavior === 'corrupt') digest = "d_FAKE_BYZ_VOTE";
-        else if (sender.behavior === 'lie_split' && target.id % 2 === 0) digest = "d_FAKE_BYZ_VOTE";
+        let intent = sender.preprepareReceived ? (sender.preprepareReceived.intent || "ATTACK") : "ATTACK";
+
+        if (sender.behavior === 'corrupt') {
+          digest = "d_RETREAT_BYZ";
+          intent = "RETREAT";
+        } else if (sender.behavior === 'lie_split' && target.id % 2 === 0) {
+          digest = "d_RETREAT_BYZ";
+          intent = "RETREAT";
+        }
 
         this.inFlightMessages.push({
           from: sender.id,
           to: target.id,
           type: 'PREPARE',
-          payload: { digest, senderId: sender.id },
+          payload: { digest, intent, senderId: sender.id },
           progress: 0
         });
       }
@@ -253,8 +262,8 @@ export class BFTEngine {
       for (let sender of this.nodes) {
         let digest = sender.preprepareReceived ? sender.preprepareReceived.digest : expectedDigest;
         
-        if (sender.behavior === 'corrupt') digest = "d_FAKE_BYZ_VOTE";
-        else if (sender.behavior === 'lie_split' && node.id % 2 === 0) digest = "d_FAKE_BYZ_VOTE";
+        if (sender.behavior === 'corrupt') digest = "d_RETREAT_BYZ";
+        else if (sender.behavior === 'lie_split' && node.id % 0 === 0) digest = "d_RETREAT_BYZ";
 
         if (sender.behavior === 'silent') continue;
 
@@ -273,9 +282,9 @@ export class BFTEngine {
             nodeId: node.id,
             fromNodeId: sender.id,
             badDigest: digest,
-            reason: 'Digest mismatch with valid proposal (Traitor message filtered out)'
+            reason: 'Traitor vote (🛡️ RETREAT) rejected by honest node'
           });
-          this.addLog('error', `🚫 Node ${node.id} REJECTED invalid Prepare vote from Traitor Node ${sender.id} (Digest: ${digest})`);
+          this.addLog('error', `🚫 Node ${node.id} REJECTED Traitor vote (🛡️ RETREAT) from Node ${sender.id}`);
         }
       }
 
@@ -299,13 +308,18 @@ export class BFTEngine {
         if (target.id === sender.id) continue;
 
         let digest = this.validPayload.digest;
-        if (sender.behavior === 'corrupt') digest = "d_BAD_COMMIT_VOTE";
+        let intent = "ATTACK";
+
+        if (sender.behavior === 'corrupt') {
+          digest = "d_RETREAT_BYZ";
+          intent = "RETREAT";
+        }
 
         this.inFlightMessages.push({
           from: sender.id,
           to: target.id,
           type: 'COMMIT',
-          payload: { digest, senderId: sender.id },
+          payload: { digest, intent, senderId: sender.id },
           progress: 0
         });
       }
@@ -330,7 +344,7 @@ export class BFTEngine {
         if (!sender.isPrepared || sender.behavior === 'silent') continue;
 
         let digest = expectedDigest;
-        if (sender.behavior === 'corrupt') digest = "d_BAD_COMMIT_VOTE";
+        if (sender.behavior === 'corrupt') digest = "d_RETREAT_BYZ";
 
         const isValid = (digest === expectedDigest);
         node.receivedCommits.push({ senderId: sender.id, digest, isValid });
@@ -347,9 +361,9 @@ export class BFTEngine {
             nodeId: node.id,
             fromNodeId: sender.id,
             badDigest: digest,
-            reason: 'Invalid Commit vote filtered out'
+            reason: 'Traitor commit vote rejected'
           });
-          this.addLog('error', `🚫 Node ${node.id} REJECTED invalid Commit vote from Traitor Node ${sender.id}`);
+          this.addLog('error', `🚫 Node ${node.id} REJECTED Traitor commit vote from Node ${sender.id}`);
         }
       }
 
@@ -376,7 +390,7 @@ export class BFTEngine {
           from: node.id,
           to: 'CLIENT',
           type: 'REPLY',
-          payload: { result: "SUCCESS", node: node.id, digest: this.validPayload.digest },
+          payload: { result: "SUCCESS", node: node.id, digest: this.validPayload.digest, intent: "ATTACK" },
           progress: 0
         });
       }
@@ -384,7 +398,7 @@ export class BFTEngine {
 
     if (validRepliesCount >= this.quorumThreshold) {
       this.currentPhase = 'COMPLETED';
-      this.addLog('system', `🎉 CONSENSUS ACHIEVED! Client received ${validRepliesCount} matching valid replies (Required threshold: ${this.quorumThreshold}). Traitor opinions successfully isolated!`);
+      this.addLog('system', `🎉 CONSENSUS ACHIEVED! Client received ${validRepliesCount} matching "⚔️ 攻撃 (ATTACK)" replies (Threshold ${this.quorumThreshold}). Traitor "🛡️ 撤退 (RETREAT)" votes successfully isolated!`);
     } else {
       this.currentPhase = 'FAILED';
       this.addLog('error', `❌ CONSENSUS FAILED! Client received only ${validRepliesCount}/${this.quorumThreshold} valid replies. Quorum condition unsatisfied.`);
