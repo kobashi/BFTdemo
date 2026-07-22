@@ -72,13 +72,9 @@ export class UIController {
       this.engine.setLeaderId(id);
     });
 
-    // Playback Buttons: Play, Pause, Stop, Step
-    document.getElementById('btnPlay')?.addEventListener('click', () => {
-      this.play();
-    });
-
-    document.getElementById('btnPause')?.addEventListener('click', () => {
-      this.pause();
+    // Playback Buttons: Play/Pause Toggle, Stop & Reset, Step
+    document.getElementById('btnPlayPause')?.addEventListener('click', () => {
+      this.togglePlay();
     });
 
     document.getElementById('btnStop')?.addEventListener('click', () => {
@@ -194,6 +190,14 @@ export class UIController {
     });
   }
 
+  togglePlay() {
+    if (this.isPlaying) {
+      this.pause();
+    } else {
+      this.play();
+    }
+  }
+
   play() {
     if (this.engine.currentPhase === 'COMPLETED' || this.engine.currentPhase === 'FAILED') {
       this.engine.reset(true);
@@ -202,10 +206,12 @@ export class UIController {
     this.isPlaying = true;
     this.renderer.setPaused(false);
 
-    const btnPlay = document.getElementById('btnPlay');
-    const btnPause = document.getElementById('btnPause');
-    if (btnPlay) btnPlay.classList.add('primary');
-    if (btnPause) btnPause.classList.remove('primary');
+    const btn = document.getElementById('btnPlayPause');
+    if (btn) {
+      btn.innerHTML = '⏸';
+      btn.title = '一時停止 (Pause)';
+      btn.classList.add('primary');
+    }
 
     if (this.playInterval) clearInterval(this.playInterval);
     this.playInterval = setInterval(() => {
@@ -225,10 +231,13 @@ export class UIController {
       clearInterval(this.playInterval);
       this.playInterval = null;
     }
-    const btnPlay = document.getElementById('btnPlay');
-    const btnPause = document.getElementById('btnPause');
-    if (btnPlay) btnPlay.classList.remove('primary');
-    if (btnPause) btnPause.classList.add('primary');
+
+    const btn = document.getElementById('btnPlayPause');
+    if (btn) {
+      btn.innerHTML = '▶';
+      btn.title = '再生 (Play)';
+      btn.classList.remove('primary');
+    }
   }
 
   updateUI() {
