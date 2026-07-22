@@ -263,7 +263,7 @@ export class BFTEngine {
         let digest = sender.preprepareReceived ? sender.preprepareReceived.digest : expectedDigest;
         
         if (sender.behavior === 'corrupt') digest = "d_RETREAT_BYZ";
-        else if (sender.behavior === 'lie_split' && node.id % 0 === 0) digest = "d_RETREAT_BYZ";
+        else if (sender.behavior === 'lie_split' && node.id % 2 === 0) digest = "d_RETREAT_BYZ";
 
         if (sender.behavior === 'silent') continue;
 
