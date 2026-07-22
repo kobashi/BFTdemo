@@ -42,10 +42,18 @@ export class NetworkRenderer {
     this.rejectionBadges = [];
   }
 
-  setSpeed(stepMs) {
-    // Scale particle travel so movement begins immediately and completes in ~75% of stepMs
-    const framesPerStep = Math.max(15, stepMs / 16.6);
-    this.particleSpeed = Math.min(0.06, Math.max(0.002, 1.0 / (framesPerStep * 0.75)));
+  // Slider (1..100) controls ONLY the particle travel speed.
+  // Higher value = faster particles. This is purely visual and does not
+  // affect auto-play step cadence.
+  setParticleSpeed(sliderPercent) {
+    const val = Math.max(1, Math.min(100, sliderPercent));
+    this.particleSpeed = 0.004 + ((val - 1) / 99) * (0.05 - 0.004);
+  }
+
+  // Approximate seconds a particle takes to travel a link at the current speed
+  // (assuming ~60fps), used for the UI label.
+  getParticleTravelSeconds() {
+    return (1 / this.particleSpeed) / 60;
   }
 
   initCanvasInteractivity() {

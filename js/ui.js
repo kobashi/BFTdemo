@@ -22,7 +22,9 @@ export class UIController {
 
     this.isPlaying = false;
     this.playTimeout = null;
-    this.playSpeed = 5150;
+    // Fixed cadence between auto-play steps (ms). Intentionally independent of
+    // the speed slider, which only affects particle travel speed.
+    this.stepInterval = 1200;
     this.activeModalNodeId = null;
 
     this.initNavigation();
@@ -95,15 +97,15 @@ export class UIController {
       this.engine.stepNext();
     });
 
-    // Speed Slider Handler
+    // Speed Slider Handler — controls ONLY the particle travel speed.
+    // It does not change the start delay or the interval between steps.
     const speedSlider = document.getElementById('sliderSpeed');
     const syncSpeed = (sliderVal) => {
       const val = parseInt(sliderVal, 10);
-      this.playSpeed = Math.round(8500 - (val - 1) * 67.67);
-      const sec = (this.playSpeed / 1000).toFixed(1);
+      this.renderer.setParticleSpeed(val);
+      const sec = this.renderer.getParticleTravelSeconds().toFixed(1);
       const label = document.getElementById('valSpeedText');
-      if (label) label.textContent = `${sec}秒/step`;
-      this.renderer.setSpeed(this.playSpeed);
+      if (label) label.textContent = `粒子 ${sec}秒`;
     };
 
     if (speedSlider) {
@@ -229,7 +231,7 @@ export class UIController {
       this.engine.stepNext();
 
       if (this.engine.currentPhase !== 'COMPLETED' && this.engine.currentPhase !== 'FAILED') {
-        this.playTimeout = setTimeout(runAutoStep, this.playSpeed);
+        this.playTimeout = setTimeout(runAutoStep, this.stepInterval);
       } else {
         // Reached the end: stop advancing but let the final particles finish
         // travelling (do NOT freeze the renderer here).
