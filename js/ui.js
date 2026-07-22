@@ -10,7 +10,8 @@ import { TheoryController } from './theory.js';
 
 export class UIController {
   constructor() {
-    this.engine = new BFTEngine(4, 0);
+    // Default N=7 nodes
+    this.engine = new BFTEngine(7, 0);
     const canvas = document.getElementById('networkCanvas');
     
     this.renderer = new NetworkRenderer(canvas, this.engine, (nodeId) => {
@@ -30,8 +31,9 @@ export class UIController {
     this.initModalEvents();
     this.initEngineListeners();
 
-    // Default setup: Set Node 3 to lie_split to show traitor exclusion immediately!
-    this.engine.setNodeBehavior(3, 'lie_split');
+    // Default N=7 setup: Node 5 = lie_split, Node 6 = corrupt to show both traitor and corrupt exclusion immediately!
+    this.engine.setNodeBehavior(5, 'lie_split');
+    this.engine.setNodeBehavior(6, 'corrupt');
     this.updateUI();
   }
 
@@ -147,10 +149,12 @@ export class UIController {
 
   initPresets() {
     const presets = {
-      presetStandard: { N: 4, leader: 0, behaviors: { 3: 'lie_split' } },
-      presetBreakdown: { N: 4, leader: 0, behaviors: { 2: 'silent', 3: 'lie_split' } },
-      presetTraitorLeader: { N: 4, leader: 0, behaviors: { 0: 'lie_split' } },
-      presetSilentNode: { N: 4, leader: 0, behaviors: { 3: 'silent' } }
+      presetStandard7: { N: 7, leader: 0, behaviors: { 5: 'lie_split', 6: 'corrupt' } },
+      presetBreakdown7: { N: 7, leader: 0, behaviors: { 4: 'silent', 5: 'lie_split', 6: 'corrupt' } },
+      presetMultiCorrupt7: { N: 7, leader: 0, behaviors: { 5: 'corrupt', 6: 'corrupt' } },
+      presetStandard4: { N: 4, leader: 0, behaviors: { 3: 'lie_split' } },
+      presetTraitorLeader4: { N: 4, leader: 0, behaviors: { 0: 'lie_split' } },
+      presetCorrupt4: { N: 4, leader: 0, behaviors: { 3: 'corrupt' } }
     };
 
     Object.keys(presets).forEach(id => {
